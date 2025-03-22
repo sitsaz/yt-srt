@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Subtitle Translator</title>
+    <style>
+        /* Reset some default styles */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; /* Modern, readable font */
+            background-color: #f4f4f4; /* Light gray background */
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center; /* Center content horizontally */
+            min-height: 100vh; /* Full viewport height */
+            padding: 20px;
+        }
+
+        h1 {
+            color: #2c3e50; /* Darker heading color */
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        h2{
+             color: #2c3e50; /* Darker heading color */
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .container {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Subtle shadow */
+            padding: 30px;
+            width: 100%;
+            max-width: 600px; /* Limit width for better readability */
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #555;
+        }
+
+        input[type="url"],
+        input[type="text"],
+        input[type="number"],
+        select,
+        textarea {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 20px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            transition: border-color 0.3s ease; /* Smooth transition on focus */
+        }
+
+        input[type="url"]:focus,
+        input[type="text"]:focus,
+        input[type="number"]:focus,
+        select:focus,
+        textarea:focus {
+            border-color: #3498db; /* Highlight on focus */
+            outline: none;
+        }
+
+        input[type="checkbox"] {
+            margin-right: 8px;
+        }
+
+        button {
+            background-color: #3498db; /* Blue button color */
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s ease;
+            width: 100%; /* Full-width button */
+            margin-bottom: 15px;
+        }
+
+        button:hover {
+            background-color: #2980b9; /* Darker blue on hover */
+        }
+
+        button:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+
+        #error {
+            color: #e74c3c; /* Red error text */
+            margin-bottom: 15px;
+            display: none; /* Hidden by default */
+        }
+
+        #progress {
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        progress {
+            width: 100%;
+            height: 20px;
+            margin-top: 10px;
+        }
+
+        #srtPreview {
+            height: 150px; /* Reduced height */
+            resize: vertical; /* Allow vertical resizing */
+            margin-bottom: 20px;
+             font-family: 'Courier New', Courier, monospace;
+        }
+
+        /* Initially hide processing-related elements */
+        #resultContainer,
+        #processContainer {
+            display: none;
+        }
+
+         #langContainer {
+           display: flex;
+           align-items: center;
+         }
+         #lang {
+           flex-grow: 1;
+           margin-right: 10px;
+         }
+
+         #downloadOnlyLabel{
+             width: auto;
+            margin-left: 10px;
+         }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>YouTube Subtitle Translator</h1>
+
+        <form id="fetchForm">
+            <label for="url">YouTube URL:</label>
+            <input type="url" id="url" name="url" required placeholder="Enter YouTube video URL" aria-describedby="url-description">
+            <div id="url-description" style="display:none;">Enter the URL of the YouTube video.</div>
+
+            <button type="submit" id="fetchBtn">Get Subtitles</button>
+        </form>
+
+        <div id="error"></div>
+
+        <div id="resultContainer">
+            <h2>Subtitle Preview</h2>
+            <textarea id="srtPreview" readonly></textarea>
+        </div>
+
+        <div id="processContainer">
+            <label for="apiKey">Gemini API Key:</label>
+            <input type="text" id="apiKey" name="apiKey" required placeholder="Enter your Gemini API key">
+
+            <div id="langContainer">
+                <label for="lang">Target Language:</label>
+                <input type="text" id="lang" name="lang" placeholder="e.g., French, Spanish">
+                <label for="downloadOnly" id="downloadOnlyLabel">
+                    <input type="checkbox" id="downloadOnly" name="downloadOnly"> Download Only
+                </label>
+            </div>
+
+            <label for="linesPerRequest">Lines per Request (max 50):</label>
+            <input type="number" id="linesPerRequest" name="linesPerRequest" min="1" max="50" value="10" required>
+
+            <label for="model">Gemini Model:</label>
+            <select id="model" name="model" required>
+                <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                <option value="gemini-2.0-pro">Gemini 2.0 Pro</option>
+                <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite</option>
+                <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                <option value="gemini-1.5-flash-lite">Gemini 1.5 Flash Lite</option>
+                <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                <option value="gemini-2.0-pro-exp-02-05">Gemini 2.0 Pro Experimental (02-05)</option>
+                <option value="gemini-1.5-flash-8b">Gemini 1.5 Flash 8B</option>
+            </select>
+
+            <button id="processBtn" disabled>Process and Download</button>
+            <div id="progress"></div>
+        </div>
+    </div>
+
+    <script>
+       const fetchForm = document.getElementById('fetchForm');
+        const fetchBtn = document.getElementById('fetchBtn'); // Get the fetch button
+        const errorDiv = document.getElementById('error');
+        const resultContainer = document.getElementById('resultContainer');
+        const processContainer = document.getElementById('processContainer');
+        const srtPreview = document.getElementById('srtPreview');
+        const processBtn = document.getElementById('processBtn');
+        const progressDiv = document.getElementById('progress');
+        const urlInput = document.getElementById('url');
+        const apiKeyInput = document.getElementById('apiKey');
+
+        // Function to clear previous results and errors
+        function resetUI() {
+            errorDiv.style.display = 'none';
+            errorDiv.textContent = '';
+            resultContainer.style.display = 'none';
+            processContainer.style.display = 'none';
+            progressDiv.innerHTML = '';
+        }
+
+        // Disable the "Process" button until subtitles are fetched.
+        function updateProcessButtonState() {
+            processBtn.disabled = !srtPreview.value;
+        }
+
+        // Add event listener for input changes on the URL field
+        urlInput.addEventListener('input', resetUI);
+
+        fetchForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const url = urlInput.value;
+
+            resetUI(); // Clear previous results
+             fetchBtn.disabled = true; // Disable fetch button during request
+            fetchBtn.textContent = 'Fetching...'; // Change button text
+
+
+            try {
+                const response = await fetch('/fetch-subtitles', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url }),
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error);
+                }
+
+                const data = await response.json();
+                srtPreview.value = data.srt;
+                resultContainer.style.display = 'block';
+                processContainer.style.display = 'block';
+                updateProcessButtonState(); // Enable "Process" button
+            } catch (error) {
+                errorDiv.textContent = error.message;
+                errorDiv.style.display = 'block';
+            } finally {
+                 fetchBtn.disabled = false; // Re-enable fetch button
+                 fetchBtn.textContent = 'Get Subtitles'; // Change text back
+            }
+        });
+        // Event listener for input in API Key Field
+        apiKeyInput.addEventListener('input', () => {
+            processBtn.disabled = !(srtPreview.value && apiKeyInput.value);
+        });
+        processBtn.addEventListener('click', () => {
+            const apiKey = apiKeyInput.value;
+            const srt = encodeURIComponent(srtPreview.value);
+            const lang = document.getElementById('lang').value;
+            const downloadOnly = document.getElementById('downloadOnly').checked;
+            const linesPerRequest = document.getElementById('linesPerRequest').value;
+            const model = document.getElementById('model').value;
+
+            errorDiv.style.display = 'none';
+            errorDiv.textContent = '';
+            progressDiv.innerHTML = 'Starting...';
+            processBtn.disabled = true; //Disable button while processing
+
+            const eventSource = new EventSource(
+                `/process-subtitles?apiKey=${encodeURIComponent(apiKey)}&srt=${srt}&lang=${encodeURIComponent(lang)}&downloadOnly=${downloadOnly}&linesPerRequest=${linesPerRequest}&model=${encodeURIComponent(model)}`
+            );
+
+            eventSource.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'progress') {
+                    progressDiv.innerHTML = `${data.message} <progress value="${data.progress}" max="${data.total}"></progress>`;
+                } else if (data.type === 'error') {
+                    errorDiv.textContent = data.error;
+                    errorDiv.style.display = 'block';
+                    eventSource.close();
+                     processBtn.disabled = false; // Re-enable the button on error
+                } else if (data.type === 'complete') {
+                    const blob = new Blob([data.srt], { type: 'text/srt' });
+                    const downloadUrl = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = 'subtitles.srt';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(downloadUrl);
+                    progressDiv.innerHTML = 'Processing complete!';
+                    eventSource.close();
+                    processBtn.disabled = false; // Re-enable button
+                }
+            };
+
+            eventSource.onerror = () => {
+                errorDiv.textContent = 'Connection lost. Please try again.';
+                errorDiv.style.display = 'block';
+                eventSource.close();
+                processBtn.disabled = false; // Re-enable button
+
+            };
+        });
+          // Initially disable the process button
+        updateProcessButtonState();
+    </script>
+</body>
+</html>
