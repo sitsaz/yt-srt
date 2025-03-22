@@ -6,7 +6,7 @@ const path = require('path');
 const fs = require('fs/promises');
 const axios = require('axios');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const cheerio = require('cheerio'); // For HTML scraping (if needed)
+const cheerio = require('cheerio'); // Optional
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -14,100 +14,32 @@ const port = process.env.PORT || 3000;
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-// --- Proxy Management ---
-let proxies = []; // Array to store fetched proxies
+// --- Proxy Management (No Persistence) ---
+let proxies = [];
 let currentProxyIndex = 0;
 
-// Function to fetch proxies (Example: ProxyScrape API - Free Tier)
 async function fetchProxies() {
     try {
         const response = await axios.get('https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all');
-        const fetchedProxies = response.data.split('\r\n').filter(proxy => proxy.trim() !== '');
+        const fetchedProxies = response.data.split('\r\n').map(proxy => proxy.trim()).filter(proxy => proxy !== '');
+
         if (fetchedProxies.length > 0) {
             proxies = fetchedProxies;
-            currentProxyIndex = 0; // Reset index
-            console.log(`Fetched ${proxies.length} proxies from ProxyScrape.`);
-            await saveProxiesToFile(); // Save to file
+            currentProxyIndex = 0;
+            console.log(`Fetched ${proxies.length} proxies.`);
         } else {
-            console.warn('No proxies fetched from ProxyScrape.');
+            console.warn('No proxies fetched.');
         }
     } catch (error) {
-        console.error('Error fetching proxies from ProxyScrape:', error.message);
+        console.error('Error fetching proxies:', error.message);
     }
 }
 
-// Function to get the next proxy (with retries and error handling)
-async function getNextProxy() {
-    const maxRetries = 3; // Maximum retries per proxy
-    let retries = 0;
-
-    while (retries < maxRetries) {
-        if (proxies.length === 0) {
-            console.log("proxies array is empty");
-            await fetchProxies(); // Fetch proxies if list is empty
-            if (proxies.length === 0) {
-                // If still empty after fetching, return null
-                console.error("No proxies available even after fetching.");
-                return null;
-            }
-        }
-
-        const proxy = proxies[currentProxyIndex];
-        currentProxyIndex = (currentProxyIndex + 1) % proxies.length;
-
-        if (await isProxyWorking(proxy)) { // Check if proxy is working
-            return proxy;
-        } else {
-            console.warn(`Proxy ${proxy} is not working, trying next...`);
-        }
-
-        retries++;
-    }
-
-    console.error(`Max retries (${maxRetries}) reached for getting a working proxy.`);
-    return null; // Or throw an error: throw new Error('No working proxies available');
-}
-
-// Function to check if a proxy is working
-async function isProxyWorking(proxy) {
-    try {
-        const testUrl = 'https://www.youtube.com/'; // Use a reliable test URL
-        const proxyAgent = new HttpsProxyAgent(proxy);
-        const response = await axios.get(testUrl, {
-            httpsAgent: proxyAgent,
-            timeout: 5000, // Shorter timeout for testing
-        });
-        return response.status >= 200 && response.status < 300;
-
-    } catch (error) {
-        // console.error(`Proxy ${proxy} failed:`, error.message);  // Optional logging
-        return false;
-    }
-}
-
-async function saveProxiesToFile() {
-    try {
-        const filePath = path.join(__dirname, 'proxies.json');
-        await fs.writeFile(filePath, JSON.stringify(proxies), 'utf8');
-        console.log('Proxies saved to file.');
-    } catch (error) {
-        console.error('Error saving proxies to file:', error);
-    }
-}
-
-async function loadProxiesFromFile() {
-    try {
-        const filePath = path.join(__dirname, 'proxies.json');
-        const data = await fs.readFile(filePath, 'utf8');
-        proxies = JSON.parse(data);
-        console.log('Proxies loaded from file.');
-    } catch (error) {
-        if (error.code === 'ENOENT') {
-            console.log('proxies.json file not found, starting with empty proxy list.');
-        } else {
-            console.error('Error loading proxies from file:', error);
-        }
-    }
+function getNextProxy() {
+    if (proxies.length === 0) { return null; }
+    const proxy = proxies[currentProxyIndex];
+    currentProxyIndex = (currentProxyIndex + 1) % proxies.length;
+    return proxy;
 }
 
 // --- Caching Setup ---
@@ -116,27 +48,23 @@ const cacheDir = path.join(__dirname, 'cache');
 async function getCachedTranscript(videoId) {
     try {
         const filePath = path.join(cacheDir, `${videoId}.json`);
-        const data = await fs.readFile(filePath, 'utf8');
-        return JSON.parse(data);
+        return JSON.parse(await fs.readFile(filePath, 'utf8'));
     } catch (error) {
-        if (error.code === 'ENOENT') {
-            return null; // Not found
-        }
-        throw error; // Other errors
+        if (error.code === 'ENOENT') { return null; }
+        throw error;
     }
 }
 
 async function saveCachedTranscript(videoId, transcript) {
     try {
         await fs.mkdir(cacheDir, { recursive: true });
-        const filePath = path.join(cacheDir, `${videoId}.json`);
-        await fs.writeFile(filePath, JSON.stringify(transcript), 'utf8');
+        await fs.writeFile(path.join(cacheDir, `${videoId}.json`), JSON.stringify(transcript), 'utf8');
     } catch (err) {
-        console.error("Error writing to cache:", err);
+        console.error('Error writing to cache:', err);
     }
 }
 
-// --- User-Agent Rotation (Monkey-Patching - Modified for Axios) ---
+// --- User-Agent Rotation ---
 const userAgents = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15',
@@ -145,50 +73,54 @@ const userAgents = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.131 Safari/537.36 Edg/92.0.902.67',
 ];
 
-// Monkey-patch the YoutubeTranscript._fetchCaptions method (using Axios)
+// --- Monkey-Patch _fetchCaptions (Corrected) ---
 const originalFetchCaptions = YoutubeTranscript.prototype._fetchCaptions;
 YoutubeTranscript.prototype._fetchCaptions = async function (fetchOptions) {
-
-    const proxyUrl = await getNextProxy(); // Await the proxy
+    const proxyUrl = getNextProxy();
     if (!proxyUrl) {
-        throw new Error('No working proxies available');
+        await fetchProxies(); // Fetch proxies if the list is empty
+        if (proxies.length === 0) {
+            throw new Error('No proxies available');
+        }
     }
-    const proxyAgent = new HttpsProxyAgent(proxyUrl);
-    const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
 
+    const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
     console.log(`Using User-Agent: ${randomUserAgent}`);
     console.log(`Using Proxy: ${proxyUrl}`);
 
+    const proxyAgent = new HttpsProxyAgent(proxyUrl);
+
     try {
+        // Use Axios directly, with the proxy agent and headers
         const response = await axios.get(fetchOptions.url, {
             httpsAgent: proxyAgent,
             headers: {
                 'User-Agent': randomUserAgent,
-                Cookie: fetchOptions.cookie,
+                ...(fetchOptions.cookie ? { Cookie: fetchOptions.cookie } : {}), // Preserve original cookie
             },
             timeout: 15000,
         });
-        return originalFetchCaptions.call(this, { ...fetchOptions, data: response.data });
 
+        // IMPORTANT: Return the result in the expected format
+      return {
+        player: fetchOptions.player, // Pass along player data
+        captions: response.data
+      };
     } catch (error) {
         console.error("Axios request failed:", error.message);
-        if (error.code === 'ECONNABORTED') {
-            console.error('Request timed out');
-        } else if (error.response) {
-            console.error(`Response status: ${error.response.status}`);
-        }
-        throw error;
+        throw error; // Re-throw the error
     }
 };
+
 
 // --- Helper Functions ---
 
 function secondsToSrtTimecode(seconds) {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-    const milliseconds = Math.floor((seconds - Math.floor(seconds)) * 1000);
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')},${String(milliseconds).padStart(3, '0')}`;
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    const ms = Math.floor((seconds - Math.floor(seconds)) * 1000);
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')},${String(ms).padStart(3, '0')}`;
 }
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -196,30 +128,13 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function translateText(text, targetLang, apiKey, modelName, retry = true) {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: modelName });
-    const prompt = `Translate the following subtitle text into ${targetLang} while maintaining:
-- Natural, conversational tone
-- Proper grammar and sentence structure
-- Contextual accuracy
-- Consistent terminology
-- Appropriate length for on-screen display
-
-Avoid:
-- Literal translations
-- Overly formal or bookish language
-- Unnatural phrasing
-- Excessive wordiness
-
-Return ONLY the translated phrase, and nothing else.  Do not include any introductory text. Do not include any numbering.
-
-Input Text:
-${text}`;
+    const prompt = `Translate the following subtitle text into ${targetLang} while maintaining: ...`; // Your prompt
 
     try {
         const result = await model.generateContent(prompt);
         return result.response.text().trim();
     } catch (error) {
         if (error.status === 429 && retry) {
-            console.log('Gemini 429 error, waiting 60 seconds before retry...');
             await delay(60000);
             return translateText(text, targetLang, apiKey, modelName, false);
         }
@@ -228,96 +143,89 @@ ${text}`;
 }
 
 function extractVideoId(url) {
-    const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([^"&?\/\s]{11})/);
-    return match ? match[1] : null;
+  const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([^"&?\/\s]{11})/);
+  return match ? match[1] : null; // Return null if no match
 }
 
 // --- API Endpoints ---
 
 app.post('/fetch-subtitles', async (req, res) => {
-    const { url } = req.body;
+  const { url } = req.body;
 
-    if (!url) {
-        return res.status(400).json({ error: 'YouTube URL is required' });
+  if (!url) {
+    return res.status(400).json({ error: 'YouTube URL is required' });
+  }
+
+  const videoId = extractVideoId(url);
+  if (!videoId) {
+    return res.status(400).json({ error: 'Invalid YouTube URL' });
+  }
+
+  try {
+    const cachedTranscript = await getCachedTranscript(videoId);
+    if (cachedTranscript) {
+      console.log('Using cached transcript');
+      const srt = cachedTranscript
+        .map((item, index) => `${index + 1}\n${secondsToSrtTimecode(item.offset)} --> ${secondsToSrtTimecode(item.offset + item.duration)}\n${item.text.trim()}\n`)
+        .join('\n');
+      return res.json({ srt });
     }
 
-    const videoId = extractVideoId(url);
-    if (!videoId) {
-        return res.status(400).json({ error: 'Invalid YouTube URL' });
+    const transcript = await YoutubeTranscript.fetchTranscript(url); // Use the library directly (now patched)
+    const srt = transcript
+      .map((item, index) => `${index + 1}\n${secondsToSrtTimecode(item.offset)} --> ${secondsToSrtTimecode(item.offset + item.duration)}\n${item.text.trim()}\n`)
+      .join('\n');
+
+    await saveCachedTranscript(videoId, transcript);
+    res.json({ srt });
+  } catch (error) {
+    console.error(error);
+    if (error.name === 'YoutubeTranscriptDisabledError') {
+      res.status(400).json({ error: 'Subtitles are disabled for this video.' });
+    } else if (error.message.includes('No transcript found')) {
+      res.status(404).json({ error: 'No transcript found for this video' });
+    } else {
+      res.status(500).json({ error: 'Failed to fetch transcript' });
     }
-
-    try {
-        // --- Caching Logic ---
-        const cachedTranscript = await getCachedTranscript(videoId);
-        if (cachedTranscript) {
-            console.log('Using cached transcript');
-            const srt = cachedTranscript.map((item, index) => {
-                const start = secondsToSrtTimecode(item.offset);
-                const end = secondsToSrtTimecode(item.offset + item.duration);
-                return `${index + 1}\n${start} --> ${end}\n${item.text.trim()}\n`;
-            }).join('\n');
-            return res.json({ srt });
-        }
-
-        // --- Aggressive Delay (Before Fetching) ---
-        console.log('Waiting 60 seconds before fetching transcript...');
-        await delay(60000);
-
-        const transcript = await YoutubeTranscript.fetchTranscript(url);
-        const srt = transcript.map((item, index) => {
-            const start = secondsToSrtTimecode(item.offset);
-            const end = secondsToSrtTimecode(item.offset + item.duration);
-            return `${index + 1}\n${start} --> ${end}\n${item.text.trim()}\n`;
-        }).join('\n');
-
-        // --- Save to Cache ---
-        await saveCachedTranscript(videoId, transcript);
-
-        res.json({ srt });
-
-    } catch (error) {
-        console.error(error);
-        if (error.name === 'YoutubeTranscriptDisabledError') {
-            res.status(400).json({ error: 'Subtitles are disabled for this video.' });
-        } else if (error.message.includes('No transcript found')) {
-             res.status(404).json({ error: 'No transcript found for this video' });
-          } else{
-          res.status(500).json({ error: 'Failed to fetch transcript' });
-          }
-    }
+  }
 });
 
 app.get('/process-subtitles', async (req, res) => {
     const { apiKey, srt, lang, downloadOnly, linesPerRequest, model } = req.query;
 
-    if (!apiKey) {
-        return res.status(400).json({ error: 'Gemini API key is required' });
-    }
-    if (!srt) {
-        return res.status(400).json({ error: 'Subtitles content is required' });
-    }
-    if (downloadOnly !== 'true' && !lang) {
-        return res.status(400).json({ error: 'Target language is required for translation' });
-    }
-    if (downloadOnly !== 'true' && !linesPerRequest) {
-        return res.status(400).json({ error: 'Lines per request is required for translation' });
-    }
-    if (!model) {
-        return res.status(400).json({ error: 'Model selection is required' });
-    }
-
-    res.setHeader('Content-Type', 'text/event-stream');
+  if (!apiKey) {
+    sendError('Gemini API key is required');
+    return;
+  }
+  if (!srt) {
+    sendError('Subtitles content is required');
+    return;
+  }
+  if (downloadOnly !== 'true' && !lang) {
+    sendError('Target language is required for translation');
+    return;
+  }
+  if (downloadOnly !== 'true' && !linesPerRequest) {
+    sendError('Lines per request is required for translation');
+    return;
+  }
+  if (!model) {
+    sendError('Model selection is required');
+    return;
+  }
+      res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
     const shouldDownloadOnly = downloadOnly === 'true';
     const maxLines = Math.min(parseInt(linesPerRequest, 10) || 1, 50);
 
-    const sendProgress = (message, progress, total) => {
+     const sendProgress = (message, progress, total) => {
         res.write(`data: ${JSON.stringify({ type: 'progress', message, progress, total })}\n\n`);
     };
 
     const sendError = (error) => {
+        console.error("Sending Error:", error);
         res.write(`data: ${JSON.stringify({ type: 'error', error })}\n\n`);
         res.end();
     };
@@ -334,8 +242,7 @@ app.get('/process-subtitles', async (req, res) => {
             const lines = finalSrt.split('\n');
             const transcript = [];
             let currentItem = null;
-
-            for (let i = 0; i < lines.length; i++) {
+                for (let i = 0; i < lines.length; i++) {
                 if (lines[i].includes('-->')) {
                     currentItem = { time: lines[i], text: '' };
                 } else if (lines[i].trim() && currentItem && !/^\d+$/.test(lines[i])) {
@@ -352,21 +259,20 @@ app.get('/process-subtitles', async (req, res) => {
 
             const total = transcript.length;
             const translations = [];
+
             for (let i = 0; i < total; i += maxLines) {
                 const batch = transcript.slice(i, i + maxLines);
                 const batchText = batch.map(item => item.text.trim()).join('\n');
-                const batchSize = batch.length;
 
-                sendProgress(`Translating lines ${i + 1} to ${Math.min(i + batchSize, total)} of ${total}`, i + batchSize, total);
+                sendProgress(`Translating lines ${i + 1} to ${Math.min(i + maxLines, total)} of ${total}`,  i + maxLines, total);
                 const translatedBatch = await translateText(batchText, lang, apiKey, model);
                 const translatedLines = translatedBatch.split('\n');
-
-                if (translatedLines.length !== batchSize) {
+                if (translatedLines.length !== batch.length) {
                     console.warn('Mismatch in translated lines, adjusting...');
                 }
-                translations.push(...translatedLines.slice(0, batchSize));
+                translations.push(...translatedLines.slice(0, batch.length));
 
-                // Delay between translation batches (Gemini API)
+                // Delay for Gemini API rate limit
                 if (i + maxLines < total) {
                     console.log('Waiting 4 seconds before next translation batch...');
                     await delay(4000);
@@ -377,9 +283,7 @@ app.get('/process-subtitles', async (req, res) => {
                 translations.push(...Array(total - translations.length).fill(''));
             }
 
-            finalSrt = transcript.map((item, index) => {
-                return `${index + 1}\n${item.time}\n${translations[index] || item.text.trim()}\n`;
-            }).join('\n');
+            finalSrt = transcript.map((item, index) => `${index + 1}\n${item.time}\n${translations[index] || item.text.trim()}\n`).join('\n');
         } else {
             sendProgress('Preparing download without translation', 1, 1);
         }
@@ -389,10 +293,10 @@ app.get('/process-subtitles', async (req, res) => {
     } catch (error) {
         console.error('Error in processing:', error);
         if (error.status === 429) {
-            sendError('Gemini API rate limit exceeded.  Please try again later.');
+            sendError('Gemini API rate limit exceeded. Please try again later.');
         } else if (error.message.includes('API key')) {
-          sendError('Invalid Gemini API key');
-        }else {
+            sendError('Invalid Gemini API key');
+        } else {
             sendError(error.message || 'Failed to process subtitles');
         }
     }
@@ -400,14 +304,15 @@ app.get('/process-subtitles', async (req, res) => {
 
 // --- Initialization (Fetch proxies on startup and periodically) ---
 (async () => {
-    await loadProxiesFromFile();
+  try {
     await fetchProxies();
-    setInterval(fetchProxies, 60 * 60 * 1000); // Refresh proxies every hour
+  } catch (error) {
+    console.error('Failed to fetch initial proxies:', error);
+    process.exit(1); // Exit if initial fetch fails
+  }
+  setInterval(fetchProxies, 60 * 60 * 1000);
 
-    // Start the Express server *after* initial proxy setup
-    app.listen(port, () => {
-        console.log(`Server running at http://localhost:${port}`);
-    });
+  app.listen(port, () => {
+    console.log(`Server running at http://localhost:${port}`);
+  });
 })();
-
-module.exports = app;

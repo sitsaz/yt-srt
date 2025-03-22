@@ -1,24 +1,21 @@
 {
   "name": "youtube-subtitle-app",
   "version": "1.0.0",
-  "description": "YouTube Subtitle Downloader",
-  "main": "main.js",
+  "main": "server.js",
   "scripts": {
-    "start": "electron .",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "description": "",
   "dependencies": {
-    "@google/generative-ai": "^0.2.1",
+    "@google/generative-ai": "^0.24.0",
     "axios": "^1.8.4",
     "cheerio": "^1.0.0",
-    "express": "^4.18.2",
+    "express": "^4.21.2",
     "https-proxy-agent": "^7.0.6",
-    "youtube-transcript": "^1.0.6"
-  },
-  "devDependencies": {
-    "electron": "^28.1.0"
+    "youtube-transcript": "^1.2.1"
   }
 }
