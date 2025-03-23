@@ -35,18 +35,7 @@ jobs:
       # Step 5: Create a detailed exe.json configuration file
       - name: Create exe.json Configuration
         run: |
-          echo {^
-            "entry": "server.js",^
-            "out": "build/yt-srt.exe",^
-            "version": "${{ github.event.inputs.version }}",^
-            "icon": "public/favicon.ico",^
-            "executionLevel": "asInvoker",^
-            "properties": {^
-              "FileDescription": "yt-srt Executable",^
-              "ProductName": "yt-srt",^
-              "CompanyName": "yebekhe",^
-              "LegalCopyright": "© 2025 yebekhe"^
-            }^
+          echo {"entry": "server.js", "out": "build/yt-srt.exe", "version": "${{ github.event.inputs.version }}", "icon": "public/favicon.ico", "executionLevel": "asInvoker", "properties": {"FileDescription": "yt-srt Executable", "ProductName": "yt-srt", "CompanyName": "yebekhe", "LegalCopyright": "© 2025 yebekhe"}} > exe.json
           } > exe.json
         shell: cmd
 
