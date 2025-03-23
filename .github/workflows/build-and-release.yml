@@ -1,0 +1,92 @@
+name: Build and Release yt-srt Executable
+
+# Trigger the workflow manually
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      # Step 1: Checkout the repository code
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Step 2: Set up Node.js environment with version 20
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Step 3: Install project dependencies from package.json
+      - name: Install Dependencies
+        run: npm install
+
+      # Step 4: Install @angablue/exe as a development dependency
+      - name: Install @angablue/exe
+        run: npm install --save-dev @angablue/exe
+
+      # Step 5: Create a detailed exe.json configuration file
+      - name: Create exe.json Configuration
+        run: |
+          echo {^
+            "entry": "server.js",^
+            "out": "build/yt-srt.exe",^
+            "version": "${{ github.event.inputs.version }}",^
+            "icon": "public/favicon.ico",^
+            "executionLevel": "asInvoker",^
+            "properties": {^
+              "FileDescription": "yt-srt Executable",^
+              "ProductName": "yt-srt",^
+              "CompanyName": "yebekhe",^
+              "LegalCopyright": "© 2025 yebekhe"^
+            }^
+          } > exe.json
+        shell: cmd
+
+      # Step 6: Build the executable using @angablue/exe
+      - name: Build Executable
+        run: npx exe exe.json
+
+      # Step 7: Create a temporary directory and copy assets
+      - name: Prepare Release Assets
+        run: |
+          mkdir release-assets
+          copy build\yt-srt.exe release-assets\
+          xcopy public release-assets\public /E /H /C /I
+        shell: cmd
+
+      # Step 8: Zip the release assets
+      - name: Zip Release Assets
+        run: |
+          powershell -Command "Compress-Archive -Path release-assets\* -DestinationPath yt-srt-${{ github.event.inputs.version }}.zip"
+        shell: cmd
+
+      # Step 9: Create a release
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.event.inputs.version }}
+          release_name: Release ${{ github.event.inputs.version }}
+          draft: false
+          prerelease: false
+
+      # Step 10: Upload the ZIP to the release
+      - name: Upload ZIP to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: yt-srt-${{ github.event.inputs.version }}.zip
+          asset_name: yt-srt-${{ github.event.inputs.version }}.zip
+          asset_content_type: application/zip
