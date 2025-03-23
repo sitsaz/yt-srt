@@ -34,7 +34,10 @@ jobs:
         shell: cmd
 
       - name: Build Executable
-        run: npx exe exe.json
+        run: |
+          echo Running npx exe with explicit path
+          dir exe.json
+          npx exe .\exe.json
         shell: cmd
 
       - name: Prepare Release Assets
