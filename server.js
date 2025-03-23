@@ -4,6 +4,7 @@ const { Innertube } = require('youtubei.js');
 const path = require('path');
 const axios = require('axios');
 const { DOMParser } = require('@xmldom/xmldom');
+const { v4: uuidv4 } = require('uuid'); // Import uuid
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -16,30 +17,37 @@ let innertube;
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
+// In-memory storage for progress (replace with a database in production)
+const progressStore = {};
+
 async function fetchTranscriptWithYoutubei(url, languageCode) {
+    // ... (rest of fetchTranscriptWithYoutubei function - no changes here)
     const videoId = extractVideoId(url);
     console.log(`[YOUTUBE] Fetching video info for ${videoId}`);
     let video;
     try {
         video = await innertube.getInfo(videoId);
     } catch (error) {
-        throw new Error('Failed to fetch video info: ' + error.message);
+        console.error('[YOUTUBE] Error fetching video info (IGNORED):', error);
+        if (!video || !video.captions) {
+            throw new Error('Failed to fetch video info OR no captions available.');
+        }
     }
 
     async function getCaptionTrackAndBaseUrl(captions, languageCode) {
-      if (!captions || !captions.caption_tracks) {
-          throw new Error('No captions data available.');
-      }
+        if (!captions || !captions.caption_tracks) {
+            throw new Error('No captions data available.');
+        }
 
-      const captionTrack = captions.caption_tracks.find(track => track.language_code === languageCode);
-      if (!captionTrack) {
-          throw new Error(`No caption track found for language code: ${languageCode}`);
-      }
+        const captionTrack = captions.caption_tracks.find(track => track.language_code === languageCode);
+        if (!captionTrack) {
+            throw new Error(`No caption track found for language code: ${languageCode}`);
+        }
 
-      return { baseUrl: captionTrack.base_url };
-  }
+        return { baseUrl: captionTrack.base_url };
+    }
 
-    async function processCaptionsFromBaseUrl(baseUrl) {
+      async function processCaptionsFromBaseUrl(baseUrl) {
         console.log('[YOUTUBE] Fetching transcript from base URL');
         try {
             const response = await axios.get(`${baseUrl}&fmt=json3`);
@@ -50,23 +58,29 @@ async function fetchTranscriptWithYoutubei(url, languageCode) {
                 const xmlResponse = await axios.get(baseUrl);
                 return processXmlTranscript(xmlResponse.data);
             } catch (xmlError) {
-                throw new Error(`Failed to fetch transcript (both JSON and XML): ${xmlError.message}`);
+                 throw new Error(`Failed to fetch transcript (both JSON and XML): ${xmlError.message}`);
             }
         }
+
     }
 
-    try {
-        const { baseUrl: fetchedBaseUrl } = await getCaptionTrackAndBaseUrl(video.captions, languageCode);
-        const transcript = await processCaptionsFromBaseUrl(fetchedBaseUrl);
+     try {
+
+        if (!video || !video.captions) {
+            throw new Error('Failed to fetch video info OR no captions available.');
+        }
+        const {  baseUrl: fetchedBaseUrl } = await getCaptionTrackAndBaseUrl(video.captions, languageCode);
+        baseUrl = fetchedBaseUrl;
+        const transcript = await processCaptionsFromBaseUrl(baseUrl);
         return transcript;
     } catch (error) {
         console.error('[YOUTUBE] Error fetching or processing captions:', error);
-        throw error;
+        throw error; // Re-throw to be handled by caller
     }
 }
 
 function processYoutubeiTranscript(data) {
-    if (!data.events) {
+     if (!data.events) {
         throw new Error('Invalid transcript data format');
     }
     return data.events
@@ -79,7 +93,7 @@ function processYoutubeiTranscript(data) {
 }
 
 function processXmlTranscript(xmlData) {
-    const parser = new DOMParser({
+  const parser = new DOMParser({
         errorHandler: {
             warning: (w) => { console.warn("XML Warning:", w); },
             error: (e) => { console.error("XML Error:", e); },
@@ -126,15 +140,33 @@ function secondsToSrtTimecode(seconds) {
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function translateText(text, targetLang, apiKey, modelName, retry = true) {
-    const genAI = new GoogleGenerativeAI(apiKey);
+   const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: modelName });
-    const prompt = `Translate the following subtitle text into ${targetLang}: ${text}`;
+    const prompt = `Translate the following subtitle text into ${targetLang} while maintaining:
+- Natural, conversational tone
+- Proper grammar and sentence structure
+- Contextual accuracy
+- Consistent terminology
+- Appropriate length for on-screen display
+
+Avoid:
+- Literal translations
+- Overly formal or bookish language
+- Unnatural phrasing
+- Excessive wordiness
+
+Return ONLY the translated phrase seprated by a newline, and nothing else. Do not include any introductory text. Do not include any numbering.Do not skip any lines.
+
+Input Text:
+${text}`;
+
     try {
+        console.log(`[TRANSLATE] Translating: ${text}`);
         const result = await model.generateContent(prompt);
         return result.response.text().trim();
     } catch (error) {
         if (error.status === 429 && retry) {
-            console.log('Gemini 429 error, waiting 60 seconds...');
+            console.log('[TRANSLATE] Gemini 429 error, waiting 60 seconds before retry...');
             await delay(60000);
             return translateText(text, targetLang, apiKey, modelName, false);
         }
@@ -149,9 +181,8 @@ function extractVideoId(url) {
 
 // --- API Endpoints ---
 
-// NEW ENDPOINT:  /get-languages
 app.get('/get-languages', async (req, res) => {
-    const { url } = req.query;
+  const { url } = req.query;
     if (!url) {
         return res.status(400).json({ error: 'YouTube URL is required' });
     }
@@ -163,12 +194,12 @@ app.get('/get-languages', async (req, res) => {
 
     try {
         const video = await innertube.getInfo(videoId);
-        if (!video.captions || !video.captions.caption_tracks) {
+         if (!video.captions || !video.captions.caption_tracks) {
           return res.status(404).json({ error: 'No captions available for this video.' });
         }
         const languages = video.captions.caption_tracks.map(track => ({
             code: track.language_code,
-            name: track.name.text  // Use the 'text' property
+            name: track.name.text  // Use 'text' property
         }));
         res.json({ languages });
     } catch (error) {
@@ -179,7 +210,7 @@ app.get('/get-languages', async (req, res) => {
 
 
 app.post('/fetch-subtitles', async (req, res) => {
-    const { url, languageCode } = req.body;
+   const { url, languageCode } = req.body;
 
     if (!url) { return res.status(400).json({ error: 'YouTube URL is required' }); }
     const videoId = extractVideoId(url);
@@ -197,75 +228,110 @@ app.post('/fetch-subtitles', async (req, res) => {
     }
 });
 
-app.get('/process-subtitles', async (req, res) => {
-    const { apiKey, srt, lang, downloadOnly, linesPerRequest, model } = req.query;
+// NEW ENDPOINT: Get progress
+app.get('/progress/:id', (req, res) => {
+    const { id } = req.params;
+    const progress = progressStore[id];
 
-    if (!apiKey) { return res.status(400).send('Gemini API key is required'); }
-    if (!srt) { return res.status(400).send('Subtitles content is required'); }
-    if (!downloadOnly && !lang) { return res.status(400).send('Target language is required'); }
-    if (!downloadOnly && !linesPerRequest) { return res.status(400).send('Lines per request is required'); }
-
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-
-    try {
-        let finalSrt = decodeURIComponent(srt);
-        if (!downloadOnly) {
-          const lines = finalSrt.split('\n');
-          const transcript = [];
-          let currentItem = null;
-
-          for (const line of lines) {
-              if (line.includes('-->')) {
-                  currentItem = { time: line, text: '' };
-              } else if (line.trim() && currentItem && !/^\d+$/.test(line)) {
-                  currentItem.text += line.trim() + ' ';
-              } else if (!line.trim() && currentItem) {
-                  transcript.push(currentItem);
-                  currentItem = null;
-              }
-          }
-            const total = transcript.length;
-            const translations = [];
-            const maxLines = Math.min(parseInt(linesPerRequest, 10) || 1, 50);
-            for (let i = 0; i < total; i += maxLines) {
-                const batch = transcript.slice(i, i + maxLines);
-                const batchText = batch.map(item => item.text.trim()).join('\n');
-
-                sendProgress(res, `Translating lines ${i + 1} to ${Math.min(i + maxLines, total)} of ${total}`, i + maxLines, total);
-                const translatedBatch = await translateText(batchText, lang, apiKey, model);
-                translations.push(...translatedBatch.split('\n'));
-
-                if (i + maxLines < total) {
-                    await delay(4000); // Wait 4 seconds
-                }
-            }
-
-            finalSrt = transcript.map((item, index) => `${index + 1}\n${item.time}\n${translations[index] || item.text.trim()}\n`).join('\n');
-        }
-
-        sendFinalSrt(res, finalSrt);
-    } catch (error) {
-        console.error('Error in processing:', error);
-        sendError(res, error.message);
+    if (progress) {
+        res.json(progress);
+    } else {
+        res.status(404).json({ error: 'Translation not found' }); // Or in progress
     }
 });
 
-function sendProgress(res, message, progress, total) {
-    res.write(`data: ${JSON.stringify({ type: 'progress', message, progress, total })}\n\n`);
-}
+app.post('/process-subtitles', async (req, res) => {
+    const { apiKey, srt, lang, downloadOnly, linesPerRequest, model } = req.body;
 
-function sendError(res, error) {
-    console.error('Error:', error);
-    res.write(`data: ${JSON.stringify({ type: 'error', error })}\n\n`);
-    res.end();
-}
+    if (!apiKey) { return res.status(400).json({ error: 'Gemini API key is required' }); }
+    if (!srt) { return res.status(400).json({ error: 'Subtitles content is required' }); }
+    if (!downloadOnly && !lang) { return res.status(400).json({ error: 'Target language is required' }); }
+    if (!downloadOnly && !linesPerRequest) { return res.status(400).json({ error: 'Lines per request is required' }); }
 
-function sendFinalSrt(res, srt) {
-    res.write(`data: ${JSON.stringify({ type: 'complete', srt })}\n\n`);
-    res.end();
-}
+    // Generate a unique ID for this translation request
+    const translationId = uuidv4();
+
+    // Store initial progress
+    progressStore[translationId] = {
+        message: 'Starting...',
+        progress: 0,
+        total: 0,  // We'll update this later
+        completed: false,
+        srt: null, // We'll store the final SRT here
+    };
+
+	// Respond immediately with the translation ID.  The client will use this to poll.
+    res.json({ translationId });
+
+     // Perform translation in the background (don't block the response)
+	  (async () => { //using an IIFE
+        try {
+            let finalSrt = srt;
+
+            if (!downloadOnly) {
+                const lines = finalSrt.split('\n');
+                const transcript = [];
+                let currentItem = null;
+
+                for (const line of lines) {
+                    if (line.includes('-->')) {
+                        currentItem = { time: line, text: '' };
+                    } else if (line.trim() && currentItem && !/^\d+$/.test(line)) {
+                        currentItem.text += line.trim() + ' ';
+                    } else if (!line.trim() && currentItem) {
+                        transcript.push(currentItem);
+                        currentItem = null;
+                    }
+                }
+
+                const total = transcript.length;
+                progressStore[translationId].total = total; // Set the total now
+                const translations = [];
+                const maxLines = Math.min(parseInt(linesPerRequest, 10) || 1, 50);
+
+                for (let i = 0; i < total; i += maxLines) {
+                    const batch = transcript.slice(i, i + maxLines);
+                    const batchText = batch.map(item => item.text.trim()).join('\n');
+
+                    // Update progress *before* the translation (more accurate timing)
+                    progressStore[translationId] = {
+                      ...progressStore[translationId],
+                        message: `Translating lines ${i + 1} to ${Math.min(i + maxLines, total)} of ${total}`,
+                        progress: Math.min(i + maxLines, total),
+                    };
+
+                    const translatedBatch = await translateText(batchText, lang, apiKey, model);
+                    translations.push(...translatedBatch.split('\n'));
+
+                    if (i + maxLines < total) {
+                        await delay(4000); // Wait 4 seconds
+                    }
+                }
+
+                finalSrt = transcript.map((item, index) => `${index + 1}\n${item.time}\n${translations[index] || item.text.trim()}\n`).join('\n');
+            }
+
+            // Update progress to completed
+             progressStore[translationId] = {
+                ...progressStore[translationId],
+                message: 'Translation Complete!',
+                progress: progressStore[translationId].total,
+                completed: true,
+                srt: finalSrt,
+            };
+
+
+        } catch (error) {
+            console.error('Error in processing:', error);
+             progressStore[translationId] = {
+                ...progressStore[translationId], //keep current info
+                message: 'Error during translation',
+                error: error.message, // Store the error
+                completed: true, // Consider it completed (with error)
+            };
+        }
+    })(); //immediately invoked
+});
 
 (async () => {
     try {
