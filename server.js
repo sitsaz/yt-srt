@@ -18,7 +18,7 @@ let currentProxyIndex = 0;
 
 async function fetchProxies() {
     try {
-        const response = await axios.get('https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all');
+        const response = await axios.get('https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all', { timeout: 10000 });
         const fetchedProxies = response.data.split('\r\n')
             .map(proxy => proxy.trim())
             .filter(proxy => proxy !== '');
@@ -52,51 +52,94 @@ const userAgents = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15',
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.131 Safari/537.36 Edg/92.0.902.67',
 ];
 
-// --- Monkey-Patch _fetchCaptions ---
-const originalFetchCaptions = YoutubeTranscript.prototype._fetchCaptions;
-YoutubeTranscript.prototype._fetchCaptions = async function (fetchOptions) {
-    let proxyUrl = getNextProxy();
-    if (!proxyUrl) {
-        console.log('[PROXY] No proxy available, attempting to fetch new proxies');
-        await fetchProxies();
-        proxyUrl = getNextProxy();
+// --- Enhanced YoutubeTranscript Fetching with Retry Loop and Timeout ---
+async function fetchTranscriptWithProxy(url) {
+    // Fetch fresh proxies for each request
+    console.log('[YOUTUBE] Fetching fresh proxy list');
+    const success = await fetchProxies();
+    if (!success) {
+        throw new Error('Failed to fetch proxies');
+    }
+
+    let attempts = 0;
+    const maxAttempts = proxies.length;
+    const PROXY_TIMEOUT = 10000; // 10 seconds timeout per proxy attempt
+
+    while (attempts < maxAttempts) {
+        let proxyUrl = getNextProxy();
         if (!proxyUrl) {
-            throw new Error('No proxies available after refresh');
+            throw new Error('No proxies available');
+        }
+
+        const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
+        const proxyAgent = new HttpsProxyAgent(`http://${proxyUrl}`);
+
+        console.log(`[YOUTUBE] Attempt ${attempts + 1}/${maxAttempts} with proxy: ${proxyUrl}`);
+        console.log(`[YOUTUBE] User-Agent: ${randomUserAgent}`);
+
+        const originalFetch = YoutubeTranscript.fetchTranscript;
+        YoutubeTranscript.fetchTranscript = async function(videoUrl, options = {}) {
+            try {
+                // Wrap axios request in a Promise with timeout
+                const fetchPromise = axios.get(`https://www.youtube.com/watch?v=${extractVideoId(videoUrl)}`, {
+                    httpsAgent: proxyAgent,
+                    headers: {
+                        'User-Agent': randomUserAgent,
+                    },
+                    timeout: PROXY_TIMEOUT
+                });
+
+                const response = await Promise.race([
+                    fetchPromise,
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Proxy timeout')), PROXY_TIMEOUT))
+                ]);
+
+                console.log(`[YOUTUBE] Initial page fetch status: ${response.status}`);
+                
+                const transcript = await originalFetch.call(this, videoUrl, {
+                    ...options,
+                    fetchOptions: {
+                        ...options.fetchOptions,
+                        httpsAgent: proxyAgent,
+                        headers: {
+                            'User-Agent': randomUserAgent,
+                            ...(options.fetchOptions?.headers || {})
+                        }
+                    }
+                });
+                
+                return transcript;
+            } catch (error) {
+                console.error(`[YOUTUBE] Proxy ${proxyUrl} failed:`, error.message);
+                throw error;
+            }
+        };
+
+        try {
+            const transcriptPromise = YoutubeTranscript.fetchTranscript(url);
+            const transcript = await Promise.race([
+                transcriptPromise,
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Transcription timeout')), PROXY_TIMEOUT))
+            ]);
+            console.log(`[YOUTUBE] Successfully fetched transcript using proxy ${proxyUrl}`);
+            YoutubeTranscript.fetchTranscript = originalFetch; // Restore immediately on success
+            return transcript;
+        } catch (error) {
+            YoutubeTranscript.fetchTranscript = originalFetch; // Restore on failure
+            attempts++;
+            if (error.message === 'Transcription timeout' || error.message === 'Proxy timeout') {
+                console.log(`[YOUTUBE] Proxy ${proxyUrl} timed out after ${PROXY_TIMEOUT / 1000}s`);
+            }
+            if (attempts === maxAttempts) {
+                throw new Error('All proxies failed or timed out');
+            }
+            console.log(`[YOUTUBE] Retrying with next proxy... (${maxAttempts - attempts} attempts remaining)`);
+            await delay(1000); // Small delay between retries
         }
     }
-
-    const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
-    console.log(`[REQUEST] Using Proxy: ${proxyUrl}`);
-    console.log(`[REQUEST] Using User-Agent: ${randomUserAgent}`);
-
-    const proxyAgent = new HttpsProxyAgent(`http://${proxyUrl}`);
-
-    try {
-        const response = await axios.get(fetchOptions.url, {
-            httpsAgent: proxyAgent,
-            headers: {
-                'User-Agent': randomUserAgent,
-                ...(fetchOptions.cookie ? { Cookie: fetchOptions.cookie } : {}),
-            },
-            timeout: 15000,
-            validateStatus: status => status < 500
-        });
-
-        console.log(`[REQUEST] Response status: ${response.status}`);
-        
-        return {
-            player: fetchOptions.player,
-            captions: response.data,
-        };
-    } catch (error) {
-        console.error(`[REQUEST] Failed with proxy ${proxyUrl}:`, error.message);
-        throw error;
-    }
-};
+}
 
 // --- Helper Functions ---
 function secondsToSrtTimecode(seconds) {
@@ -163,7 +206,7 @@ app.post('/fetch-subtitles', async (req, res) => {
 
     try {
         console.log(`[FETCH] Starting transcript fetch for video: ${videoId}`);
-        const transcript = await YoutubeTranscript.fetchTranscript(url);
+        const transcript = await fetchTranscriptWithProxy(url);
         const srt = transcript.map((item, index) => 
             `${index + 1}\n${secondsToSrtTimecode(item.offset)} --> ${secondsToSrtTimecode(item.offset + item.duration)}\n${item.text.trim()}\n`
         ).join('\n');
@@ -183,8 +226,11 @@ app.post('/fetch-subtitles', async (req, res) => {
         } else if (error.message.includes('No transcript found')) {
             errorMessage = 'No transcript found for this video';
             statusCode = 404;
-        } else if (error.message === 'No proxies available after refresh') {
-            errorMessage = 'No working proxies available';
+        } else if (error.message === 'Failed to fetch proxies' || error.message === 'No proxies available') {
+            errorMessage = 'Unable to fetch working proxies';
+            statusCode = 503;
+        } else if (error.message === 'All proxies failed or timed out') {
+            errorMessage = 'All available proxies failed or timed out';
             statusCode = 503;
         } else if (error.message.startsWith('Request failed with status code')) {
             errorMessage = `YouTube request failed: ${error.message}`;
@@ -208,7 +254,7 @@ app.get('/process-subtitles', async (req, res) => {
         return res.status(400).send('Target language is required for translation');
     }
     if (downloadOnly !== 'true' && !linesPerRequest) {
-        return res.status(400).send('Lines per request is required for translation');
+        return res.status(400).send('Lines per request is required for transcription');
     }
     if (!model) {
         return res.status(400).send('Model selection is required');
@@ -262,7 +308,7 @@ app.get('/process-subtitles', async (req, res) => {
             }
 
             if (transcript.length === 0) {
-                throw new Error('Failed to parse subtitles for translation');
+                throw new Error('Failed to parse subtitles for transcription');
             }
 
             const total = transcript.length;
@@ -293,7 +339,7 @@ app.get('/process-subtitles', async (req, res) => {
                 translations.push(...translatedLines.slice(0, batch.length));
 
                 if (i + maxLines < total) {
-                    console.log('[PROCESS] Waiting 4 seconds before next translation batch...');
+                    console.log('[PROCESS] Waiting 4 seconds before next batch...');
                     await delay(4000);
                 }
             }
@@ -310,7 +356,7 @@ app.get('/process-subtitles', async (req, res) => {
                 })
                 .join('\n');
         } else {
-            sendProgress('Preparing download without translation', 1, 1);
+            sendProgress('Preparing download without transcription', 1, 1);
         }
 
         sendFinalSrt(finalSrt);
@@ -329,18 +375,7 @@ app.get('/process-subtitles', async (req, res) => {
 // --- Initialization ---
 (async () => {
     try {
-        console.log('[INIT] Starting proxy initialization');
-        const success = await fetchProxies();
-        if (!success) {
-            console.error('[INIT] Initial proxy fetch failed');
-            process.exit(1);
-        }
-
-        setInterval(async () => {
-            console.log('[INIT] Refreshing proxy list');
-            await fetchProxies();
-        }, 60 * 60 * 1000);
-
+        console.log('[INIT] Starting server without initial proxy fetch');
         app.listen(port, () => {
             console.log(`[INIT] Server running at http://localhost:${port}`);
         });
