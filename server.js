@@ -3,7 +3,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { Innertube } = require('youtubei.js');
 const path = require('path');
 const fs = require('fs/promises');
-const fsSync = require('fs'); // For synchronous operations
+const fsSync = require('fs'); // For synchronous operations and existsSync
 const axios = require('axios');
 const { DOMParser } = require('@xmldom/xmldom');
 
@@ -29,24 +29,15 @@ async function fetchTranscriptWithYoutubei(url, languageCode = 'en') {
     let video;
     try {
         video = await innertube.getInfo(videoId);
-        const captionsData = JSON.stringify(video.captions, null, 2);
-        const captionsFilePath = path.join(__dirname, `captions_${videoId}.json`);
-
-        try {
-            await fs.writeFile(captionsFilePath, captionsData);
-            console.log(`[YOUTUBE] Captions data saved to ${captionsFilePath}`);
-        } catch (writeError) {
-            console.error(`[YOUTUBE] Error writing captions file:`, writeError);
-            throw new Error(`Failed to write captions file: ${writeError.message}`);
-        }
-
+        // Removed: Saving captions to a file.
         console.log('[DEBUG] Full video object keys:', Object.keys(video));
         console.log('[DEBUG] PlayerResponse captions:', JSON.stringify(video.playerResponse?.captions, null, 2));
+
     } catch (error) {
         throw new Error('Failed to fetch video info with youtubei.js (Method 2): ' + error.message);
     }
 
-    let baseUrl;  // This will be set by getCaptionTrackAndBaseUrl
+    let baseUrl;
     async function getCaptionTrackAndBaseUrl(captions, languageCode) {
         if (!captions || !captions.caption_tracks) {
             throw new Error('No captions data available.');
@@ -84,7 +75,7 @@ async function fetchTranscriptWithYoutubei(url, languageCode = 'en') {
         return transcript;
     } catch (error) {
         console.error('[YOUTUBE] Error fetching or processing captions:', error);
-        throw error; // Re-throw the error to be handled by the caller
+        throw error;
     }
 }
 
@@ -239,6 +230,9 @@ app.post('/fetch-subtitles', async (req, res) => {
             statusCode = 404;
         } else if (error.message.includes('Failed to parse XML transcript')) { // XML parse error
             errorMessage = 'Failed to parse the XML subtitle data.';
+            statusCode = 500;
+        } else if (error.message.includes('Failed to fetch video info')) {
+            errorMessage = "Failed to get video information.  This might be due to a temporary issue with the youtubei.js library.  Please try again later, or try updating the youtubei.js library.";
             statusCode = 500;
         }
         res.status(statusCode).json({ error: errorMessage });
