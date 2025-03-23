@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YouTube Subtitle Translator</title>
     <style>
-        /* Reset some default styles */
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f4; color: #333; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 20px; }
         h1, h2 { color: #2c3e50; margin-bottom: 30px; text-align: center; }
@@ -21,12 +20,11 @@
         #progress { margin-top: 20px; text-align: center; }
         progress { width: 100%; height: 20px; margin-top: 10px; }
         #srtPreview { height: 150px; resize: vertical; margin-bottom: 20px; font-family: 'Courier New', Courier, monospace; }
-        #resultContainer, #processContainer, #languageSelectContainer { display: none; } /* Hide initially */
+        #resultContainer, #processContainer, #languageContainer { display: none; }
         #langContainer { display: flex; align-items: center; }
-        #langCodeContainer { display: flex; align-items: center; margin-bottom: 10px; }
+        #langContainer > label { margin-bottom: 0px; }
         #lang { flex-grow: 1; margin-right: 10px; }
-        #languageCode { flex-grow: 1; margin-right: 10px; }
-        #downloadOnlyLabel { width: auto; margin-left: 10px; }
+        #downloadOnlyLabel { width: auto; margin-left: 10px; display: flex; align-items: center; }
     </style>
 </head>
 <body>
@@ -36,19 +34,16 @@
         <form id="fetchForm">
             <label for="url">YouTube URL:</label>
             <input type="url" id="url" name="url" required placeholder="Enter YouTube video URL">
-            <button type="button" id="getVideoDetailsBtn">Get Video Details</button> <!-- Changed to type="button" -->
-
-            <div id="languageSelectContainer">
-                <label for="languageCode">Source Language:</label>
-                <select id="languageCode" name="languageCode">
-                    <option value="" disabled selected>Select a Language</option>
-                    <!-- Options will be populated dynamically -->
-                </select>
-                <button type="submit" id="fetchBtn">Get Subtitles</button>
-            </div>
+            <button type="submit" id="detailsBtn">Get Video Details</button>
         </form>
 
         <div id="error"></div>
+
+        <div id="languageContainer">
+            <label for="languageSelect">Available Subtitle Languages:</label>
+            <select id="languageSelect"></select>
+            <button id="loadSubtitlesBtn">Load Subtitles</button>
+        </div>
 
         <div id="resultContainer">
             <h2>Subtitle Preview</h2>
@@ -63,7 +58,7 @@
                 <label for="lang">Target Language:</label>
                 <input type="text" id="lang" name="lang" placeholder="e.g., French, Spanish">
                 <label for="downloadOnly" id="downloadOnlyLabel">
-                    <input type="checkbox" id="downloadOnly" name="downloadOnly"> Download Only
+                    <input type="checkbox" id="downloadOnly" name="downloadOnly">Download Only
                 </label>
             </div>
 
@@ -72,14 +67,14 @@
 
             <label for="model">Gemini Model:</label>
             <select id="model" name="model" required>
-                <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-                <option value="gemini-2.0-pro">Gemini 2.0 Pro</option>
-                <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite</option>
-                <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-                <option value="gemini-1.5-flash-lite">Gemini 1.5 Flash Lite</option>
-                <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-                <option value="gemini-2.0-pro-exp-02-05">Gemini 2.0 Pro Experimental (02-05)</option>
-                <option value="gemini-1.5-flash-8b">Gemini 1.5 Flash 8B</option>
+                <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+                <option value="gemini-2.0-pro">gemini-2.0-pro</option>
+                <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite</option>
+                <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+                <option value="gemini-1.5-flash-lite">gemini-1.5-flash-lite</option>
+                <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                <option value="gemini-2.0-pro-exp-02-05">gemini-2.0-pro-exp-02-05</option>
+                <option value="gemini-1.5-flash-8b">gemini-1.5-flash-8b</option>
             </select>
 
             <button id="processBtn" disabled>Process and Download</button>
@@ -88,220 +83,208 @@
     </div>
 
     <script>
-  const fetchForm = document.getElementById('fetchForm');
-  const fetchBtn = document.getElementById('fetchBtn');
-  const getVideoDetailsBtn = document.getElementById('getVideoDetailsBtn');
-  const errorDiv = document.getElementById('error');
-  const resultContainer = document.getElementById('resultContainer');
-  const processContainer = document.getElementById('processContainer');
-  const languageSelectContainer = document.getElementById('languageSelectContainer');
-  const srtPreview = document.getElementById('srtPreview');
-  const processBtn = document.getElementById('processBtn');
-  const progressDiv = document.getElementById('progress');
-  const urlInput = document.getElementById('url');
-  const apiKeyInput = document.getElementById('apiKey');
-  const languageCodeSelect = document.getElementById('languageCode');
+        const fetchForm = document.getElementById('fetchForm');
+        const detailsBtn = document.getElementById('detailsBtn');
+        const errorDiv = document.getElementById('error');
+        const languageContainer = document.getElementById('languageContainer');
+        const languageSelect = document.getElementById('languageSelect');
+        const loadSubtitlesBtn = document.getElementById('loadSubtitlesBtn');
+        const resultContainer = document.getElementById('resultContainer');
+        const processContainer = document.getElementById('processContainer');
+        const srtPreview = document.getElementById('srtPreview');
+        const processBtn = document.getElementById('processBtn');
+        const progressDiv = document.getElementById('progress');
+        const urlInput = document.getElementById('url');
+        const apiKeyInput = document.getElementById('apiKey');
 
+        // --- Utility Functions ---
 
-  function resetUI() {
-    errorDiv.style.display = 'none';
-    errorDiv.textContent = '';
-    resultContainer.style.display = 'none';
-    processContainer.style.display = 'none';
-    languageSelectContainer.style.display = 'none'; // Hide language selection
-    progressDiv.innerHTML = '';
-    languageCodeSelect.innerHTML = '<option value="" disabled selected>Select a Language</option>';
-  }
-
-  function updateProcessButtonState() {
-    processBtn.disabled = !srtPreview.value || !apiKeyInput.value;
-  }
-
-  async function populateLanguageDropdown(url) {
-    try {
-      const response = await fetch(`/get-languages?url=${encodeURIComponent(url)}`);
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to fetch languages.');
-      }
-      const data = await response.json();
-
-      data.languages.forEach(lang => {
-        const option = document.createElement('option');
-        option.value = lang.code;
-        option.textContent = `${lang.name} (${lang.code})`;
-        languageCodeSelect.appendChild(option);
-      });
-      languageSelectContainer.style.display = 'block'; // Show the language selection container
-
-    } catch (error) {
-      console.error('Error populating languages:', error);
-      errorDiv.textContent = error.message;
-      errorDiv.style.display = 'block';
-
-    }
-  }
-
-  function extractVideoId(url) {
-    const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([^"&?\/\s]{11})/);
-    return match ? match[1] : null;
-  }
-
-  getVideoDetailsBtn.addEventListener('click', async () => {
-    resetUI();
-    const url = urlInput.value;
-    if (url) {
-      try {
-        const videoId = extractVideoId(url);
-        if (!videoId) {
-          errorDiv.textContent = 'Invalid YouTube URL';
-          errorDiv.style.display = 'block';
-          return;
+        function resetUI() {
+            errorDiv.style.display = 'none';
+            errorDiv.textContent = '';
+            languageContainer.style.display = 'none';
+            languageSelect.innerHTML = '';
+            resultContainer.style.display = 'none';
+            processContainer.style.display = 'none';
+            progressDiv.innerHTML = '';
+            srtPreview.value = '';
         }
-        getVideoDetailsBtn.disabled = true;
-        getVideoDetailsBtn.textContent = 'Fetching...';
-        await populateLanguageDropdown(url);
 
-      } catch (error) {
-        console.error("input handler error", error);
-      } finally {
-        getVideoDetailsBtn.disabled = false;
-        getVideoDetailsBtn.textContent = 'Get Video Details';
-      }
-    } else {
-      errorDiv.textContent = 'Please enter a YouTube URL.';
-      errorDiv.style.display = 'block';
-    }
-  });
+        function updateProcessButtonState() {
+            processBtn.disabled = !srtPreview.value || !apiKeyInput.value;
+        }
 
+        // --- Event Listeners ---
 
+        apiKeyInput.addEventListener('input', updateProcessButtonState);
 
-  apiKeyInput.addEventListener('input', updateProcessButtonState);
+        fetchForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            resetUI();
+            const url = urlInput.value;
 
-  fetchForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const url = urlInput.value;
-    const languageCode = languageCodeSelect.value;
-
-    if (!languageCode) {
-      errorDiv.textContent = 'Please select a source language.';
-      errorDiv.style.display = 'block';
-      return;
-    }
-
-    fetchBtn.disabled = true;
-    fetchBtn.textContent = 'Fetching...';
-
-    try {
-      const response = await fetch('/fetch-subtitles', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, languageCode }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error);
-      }
-
-      const data = await response.json();
-      srtPreview.value = data.srt;
-      resultContainer.style.display = 'block';
-      processContainer.style.display = 'block';
-      updateProcessButtonState();
-    } catch (error) {
-      errorDiv.textContent = error.message;
-      errorDiv.style.display = 'block';
-    } finally {
-      fetchBtn.disabled = false;
-      fetchBtn.textContent = 'Get Subtitles';
-    }
-  });
-  // IMPORTANT:  Store the interval ID so we can stop polling later.
-  let progressIntervalId = null;
-
-  processBtn.addEventListener('click', async () => {
-    const apiKey = apiKeyInput.value;
-    const srt = srtPreview.value;
-    const lang = document.getElementById('lang').value;
-    const downloadOnly = document.getElementById('downloadOnly').checked;
-    const linesPerRequest = document.getElementById('linesPerRequest').value;
-    const model = document.getElementById('model').value;
-
-    errorDiv.style.display = 'none';
-    errorDiv.textContent = '';
-    progressDiv.innerHTML = 'Starting...';
-    processBtn.disabled = true;
-
-    try {
-      const response = await fetch('/process-subtitles', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKey, srt, lang, downloadOnly, linesPerRequest, model }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Subtitle processing failed.');
-      }
-
-      const { translationId } = await response.json(); // Get the ID
-
-      // Function to fetch progress
-      const fetchProgress = async () => {
-        try {
-          const progressResponse = await fetch(`/progress/${translationId}`);
-          if (!progressResponse.ok) {
-            const errorData = await progressResponse.json();
-            throw new Error(errorData.error || 'Failed to fetch progress.');
-          }
-          const progressData = await progressResponse.json();
-
-          progressDiv.innerHTML = `${progressData.message} <progress value="${progressData.progress}" max="${progressData.total}"></progress>`;
-
-          if (progressData.completed) {
-            clearInterval(progressIntervalId); // Stop polling
-            processBtn.disabled = false;
-
-            if (progressData.error) {
-              errorDiv.textContent = progressData.error;
-              errorDiv.style.display = 'block';
-            } else if (progressData.srt) {
-              const blob = new Blob([progressData.srt], { type: 'text/srt' });
-              const downloadUrl = window.URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = downloadUrl;
-              a.download = 'translated_subtitles.srt';
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-              window.URL.revokeObjectURL(downloadUrl);
-              progressDiv.innerHTML = 'Processing complete!';
+            if (!url) {
+                errorDiv.textContent = 'Please enter a YouTube URL.';
+                errorDiv.style.display = 'block';
+                return;
             }
-          }
-        } catch (error) {
-          console.error('Error fetching progress:', error);
-          errorDiv.textContent = error.message;
-          errorDiv.style.display = 'block';
-          clearInterval(progressIntervalId); // Stop polling on error
-          processBtn.disabled = false;
-        }
-      };
 
-      // Start polling for progress (e.g., every second)
-      progressIntervalId = setInterval(fetchProgress, 1000);
+            detailsBtn.disabled = true;
+            detailsBtn.textContent = 'Fetching Details...';
 
+            try {
+                const response = await fetch('/get-video-details', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url }),
+                });
 
-    } catch (error) {
-      console.error('Error processing subtitles:', error);
-      errorDiv.textContent = error.message;
-      errorDiv.style.display = 'block';
-      processBtn.disabled = false;
-      clearInterval(progressIntervalId); //clear interval
-    }
-  });
-  updateProcessButtonState();
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error);
+                }
 
+                const data = await response.json();
+                const { availableLanguages } = data;
+
+                if (availableLanguages.length === 0) {
+                    throw new Error('No subtitles available for this video.');
+                }
+
+                languageContainer.style.display = 'block';
+                availableLanguages.forEach(lang => {
+                    const option = document.createElement('option');
+                    option.value = lang.code;
+                    option.textContent = `${lang.name} (${lang.code}${lang.isAutoGenerated ? ', auto-generated' : ''})`;
+                    languageSelect.appendChild(option);
+                });
+            } catch (error) {
+                errorDiv.textContent = error.message;
+                errorDiv.style.display = 'block';
+            } finally {
+                detailsBtn.disabled = false;
+                detailsBtn.textContent = 'Get Video Details';
+            }
+        });
+
+        loadSubtitlesBtn.addEventListener('click', async () => {
+            const url = urlInput.value;
+            const languageCode = languageSelect.value;
+
+            if (!url || !languageCode) {
+                errorDiv.textContent = 'URL and language selection are required.';
+                errorDiv.style.display = 'block';
+                return;
+            }
+
+            loadSubtitlesBtn.disabled = true;
+            loadSubtitlesBtn.textContent = 'Loading Subtitles...';
+
+            try {
+                const response = await fetch('/fetch-subtitles', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url, languageCode }),
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error);
+                }
+
+                const data = await response.json();
+                srtPreview.value = data.srt;
+                resultContainer.style.display = 'block';
+                processContainer.style.display = 'block';
+                updateProcessButtonState();
+            } catch (error) {
+                errorDiv.textContent = error.message;
+                errorDiv.style.display = 'block';
+            } finally {
+                loadSubtitlesBtn.disabled = false;
+                loadSubtitlesBtn.textContent = 'Load Subtitles';
+            }
+        });
+
+        let progressIntervalId = null;
+
+        processBtn.addEventListener('click', async () => {
+            const apiKey = apiKeyInput.value;
+            const srt = srtPreview.value;
+            const lang = document.getElementById('lang').value;
+            const downloadOnly = document.getElementById('downloadOnly').checked;
+            const linesPerRequest = document.getElementById('linesPerRequest').value;
+            const model = document.getElementById('model').value;
+            errorDiv.style.display = 'none';
+            errorDiv.textContent = '';
+            progressDiv.innerHTML = 'Starting...';
+            processBtn.disabled = true;
+
+            try {
+                const response = await fetch('/process-subtitles', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ apiKey, srt, lang, downloadOnly, linesPerRequest, model }),
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Subtitle processing failed.');
+                }
+
+                const { translationId } = await response.json();
+
+                const fetchProgress = async () => {
+                    try {
+                        const progressResponse = await fetch(`/progress/${translationId}`);
+                        if (!progressResponse.ok) {
+                            const errorData = await progressResponse.json();
+                            throw new Error(errorData.error || 'Failed to fetch progress.');
+                        }
+                        const progressData = await progressResponse.json();
+
+                        progressDiv.innerHTML = `${progressData.message} <progress value="${progressData.progress}" max="${progressData.total}"></progress>`;
+
+                        if (progressData.completed) {
+                            clearInterval(progressIntervalId);
+                            processBtn.disabled = false;
+
+                            if (progressData.error) {
+                                errorDiv.textContent = progressData.error;
+                                errorDiv.style.display = 'block';
+                            } else if (progressData.srt) {
+                                const blob = new Blob([progressData.srt], { type: 'text/srt' });
+                                const downloadUrl = window.URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = downloadUrl;
+                                a.download = 'translated_subtitles.srt';
+                                document.body.appendChild(a);
+                                a.click();
+                                document.body.removeChild(a);
+                                window.URL.revokeObjectURL(downloadUrl);
+                                progressDiv.innerHTML = 'Processing complete!';
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error fetching progress:', error);
+                        errorDiv.textContent = error.message;
+                        errorDiv.style.display = 'block';
+                        clearInterval(progressIntervalId);
+                        processBtn.disabled = false;
+                    }
+                };
+
+                progressIntervalId = setInterval(fetchProgress, 1000);
+            } catch (error) {
+                console.error('Error processing subtitles:', error);
+                errorDiv.textContent = error.message;
+                errorDiv.style.display = 'block';
+                processBtn.disabled = false;
+                clearInterval(progressIntervalId);
+            }
+        });
+
+        updateProcessButtonState();
     </script>
 </body>
 </html>

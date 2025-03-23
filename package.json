@@ -13,12 +13,10 @@
   "license": "MIT",
   "description": "Fetches, translates, and downloads YouTube subtitles.",
   "dependencies": {
-    "@google/generative-ai": "^0.24.0",
-    "@xmldom/xmldom": "^0.9.8",
-    "axios": "^1.8.4",
-    "cheerio": "^1.0.0",
+    "@google/generative-ai": "lateset",
     "express": "^4.21.2",
+    "node-fetch": "^3.3.2",
     "uuid": "^11.1.0",
-    "youtubei.js": "latest"
+    "youtube-caption-extractor": "^1.4.3"
   }
 }
