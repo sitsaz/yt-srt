@@ -1,221 +1,149 @@
 const express = require('express');
-const { YoutubeTranscript } = require('youtube-transcript');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { Innertube } = require('youtubei.js');
 const path = require('path');
 const fs = require('fs/promises');
+const fsSync = require('fs'); // For synchronous operations
 const axios = require('axios');
-const { HttpsProxyAgent } = require('https-proxy-agent');
+const { DOMParser } = require('@xmldom/xmldom');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Initialize youtubei.js Innertube client globally
+let innertube;
+(async () => {
+    innertube = await Innertube.create();
+})();
+
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-// --- Proxy Management ---
-let proxies = [];
-let currentProxyIndex = 0;
 
-async function fetchProxiesFromService() {
+// --- Method 2: Fetching Transcripts with youtubei.js ---
+async function fetchTranscriptWithYoutubei(url, languageCode = 'en') {
+    const videoId = extractVideoId(url);
+
+    // Fetch video info with youtubei.js
+    console.log('[YOUTUBE] Fetching video info with youtubei.js (Method 2)');
+    let video;
     try {
-        const response = await axios.get('https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all', { timeout: 10000 });
-        const fetchedProxies = response.data.split('\r\n')
-            .map(proxy => proxy.trim())
-            .filter(proxy => proxy !== '');
-        
-        if (fetchedProxies.length > 0) {
-            proxies = fetchedProxies;
-            currentProxyIndex = 0;
-            console.log(`[PROXY] Successfully fetched ${proxies.length} proxies from service`);
-            return true;
+        video = await innertube.getInfo(videoId);
+        const captionsData = JSON.stringify(video.captions, null, 2);
+        const captionsFilePath = path.join(__dirname, `captions_${videoId}.json`);
+
+        try {
+            await fs.writeFile(captionsFilePath, captionsData);
+            console.log(`[YOUTUBE] Captions data saved to ${captionsFilePath}`);
+        } catch (writeError) {
+            console.error(`[YOUTUBE] Error writing captions file:`, writeError);
+            throw new Error(`Failed to write captions file: ${writeError.message}`);
         }
-        console.warn('[PROXY] No proxies fetched from service');
-        return false;
+
+        console.log('[DEBUG] Full video object keys:', Object.keys(video));
+        console.log('[DEBUG] PlayerResponse captions:', JSON.stringify(video.playerResponse?.captions, null, 2));
     } catch (error) {
-        console.error('[PROXY] Error fetching proxies from service:', error.message);
-        return false;
+        throw new Error('Failed to fetch video info with youtubei.js (Method 2): ' + error.message);
     }
-}
 
-function setCustomProxies(customProxies) {
-    proxies = customProxies.map(proxy => proxy.trim()).filter(proxy => proxy !== '');
-    currentProxyIndex = 0;
-    console.log(`[PROXY] Loaded ${proxies.length} custom proxies`);
-}
+    let baseUrl;  // This will be set by getCaptionTrackAndBaseUrl
+    async function getCaptionTrackAndBaseUrl(captions, languageCode) {
+        if (!captions || !captions.caption_tracks) {
+            throw new Error('No captions data available.');
+        }
 
-function getNextProxy() {
-    if (proxies.length === 0) {
-        console.warn('[PROXY] No proxies available in pool');
-        return null;
+        const captionTrack = captions.caption_tracks.find(track => track.language_code === languageCode);
+        if (!captionTrack) {
+            throw new Error(`No caption track found for language code: ${languageCode}`);
+        }
+
+        return { baseUrl: captionTrack.base_url };
     }
-    const proxy = proxies[currentProxyIndex];
-    currentProxyIndex = (currentProxyIndex + 1) % proxies.length;
-    return proxy;
-}
 
-// --- User-Agent Rotation ---
-const userAgents = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0',
-];
-
-// --- Enhanced YoutubeTranscript Fetching ---
-async function fetchTranscriptWithProxy(url, useProxy = false, customProxies = []) {
-    const PROXY_TIMEOUT = 10000; // 10 seconds timeout per proxy attempt
-    const MAX_PROXY_RETRIES = 3;
-
-    // Function to test proxy responsiveness
-    async function testProxy(proxyUrl) {
+    async function processCaptionsFromBaseUrl(baseUrl) {
+        console.log('[YOUTUBE] Fetching transcript from base URL');
         try {
-            const proxyAgent = new HttpsProxyAgent(`http://${proxyUrl}`);
-            const response = await Promise.race([
-                axios.get('https://api.ipify.org?format=json', {
-                    httpsAgent: proxyAgent,
-                    timeout: 5000
-                }),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('Proxy test timeout')), 5000))
-            ]);
-            console.log(`[PROXY] Proxy ${proxyUrl} is responsive - IP: ${response.data.ip}`);
-            return true;
-        } catch (error) {
-            console.log(`[PROXY] Proxy ${proxyUrl} unresponsive: ${error.message}`);
-            return false;
-        }
-    }
-
-    // Function to fetch and filter proxies
-    async function getWorkingProxies() {
-        if (customProxies.length > 0) {
-            setCustomProxies(customProxies);
-        } else {
-            for (let attempt = 1; attempt <= MAX_PROXY_RETRIES; attempt++) {
-                console.log(`[YOUTUBE] Fetching proxy list (Attempt ${attempt}/${MAX_PROXY_RETRIES})`);
-                const success = await fetchProxiesFromService();
-                if (!success) {
-                    console.log('[PROXY] Proxy fetch failed, retrying...');
-                    await delay(2000);
-                    continue;
-                }
-                break;
-            }
-            if (proxies.length === 0) return false;
-        }
-
-        const testPromises = proxies.slice(0, 10).map(proxy => testProxy(proxy));
-        const testResults = await Promise.all(testPromises);
-        const workingProxies = proxies.filter((_, index) => testResults[index]);
-        
-        if (workingProxies.length > 0) {
-            proxies = workingProxies;
-            currentProxyIndex = 0;
-            console.log(`[PROXY] Found ${workingProxies.length} working proxies`);
-            return true;
-        }
-        return false;
-    }
-
-    if (!useProxy) {
-        console.log('[YOUTUBE] Fetching transcript without proxy');
-        try {
-            const transcript = await YoutubeTranscript.fetchTranscript(url);
-            console.log('[YOUTUBE] Successfully fetched transcript without proxy');
-            return transcript;
-        } catch (error) {
-            throw new Error('Failed to fetch transcript without proxy: ' + error.message);
-        }
-    }
-
-    const hasWorkingProxies = await getWorkingProxies();
-    if (!hasWorkingProxies) {
-        console.warn('[YOUTUBE] No working proxies available, falling back to direct connection');
-        try {
-            const transcript = await YoutubeTranscript.fetchTranscript(url);
-            console.log('[YOUTUBE] Successfully fetched transcript without proxy (fallback)');
-            return transcript;
-        } catch (error) {
-            throw new Error('No proxies worked and direct connection failed: ' + error.message);
-        }
-    }
-
-    let attempts = 0;
-    const maxAttempts = proxies.length;
-
-    while (attempts < maxAttempts) {
-        let proxyUrl = getNextProxy();
-        if (!proxyUrl) {
-            throw new Error('No proxies available');
-        }
-
-        const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
-        const proxyAgent = new HttpsProxyAgent(`http://${proxyUrl}`);
-
-        console.log(`[YOUTUBE] Attempt ${attempts + 1}/${maxAttempts} with proxy: ${proxyUrl}`);
-        console.log(`[YOUTUBE] User-Agent: ${randomUserAgent}`);
-
-        const originalFetch = YoutubeTranscript.fetchTranscript;
-        YoutubeTranscript.fetchTranscript = async function(videoUrl, options = {}) {
+            const response = await axios.get(`${baseUrl}&fmt=json3`);
+            return processYoutubeiTranscript(response.data);  // Use existing processor
+        } catch (jsonError) {
+            console.error('[YOUTUBE] JSON fetch failed, trying XML:', jsonError.message);
             try {
-                const fetchPromise = axios.get(`https://www.youtube.com/watch?v=${extractVideoId(videoUrl)}`, {
-                    httpsAgent: proxyAgent,
-                    headers: { 'User-Agent': randomUserAgent },
-                    timeout: PROXY_TIMEOUT
-                });
-
-                const response = await Promise.race([
-                    fetchPromise,
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('Proxy timeout')), PROXY_TIMEOUT))
-                ]);
-
-                console.log(`[YOUTUBE] Initial page fetch status: ${response.status}`);
-                
-                const transcript = await originalFetch.call(this, videoUrl, {
-                    ...options,
-                    fetchOptions: {
-                        ...options.fetchOptions,
-                        httpsAgent: proxyAgent,
-                        headers: { 'User-Agent': randomUserAgent, ...(options.fetchOptions?.headers || {}) }
-                    }
-                });
-                
-                return transcript;
-            } catch (error) {
-                console.error(`[YOUTUBE] Proxy ${proxyUrl} failed: ${error.message}`);
-                throw error;
+                const xmlResponse = await axios.get(baseUrl);
+                return processXmlTranscript(xmlResponse.data); // Use existing XML processor
+            } catch (xmlError) {
+                 throw new Error(`Failed to fetch transcript (both JSON and XML): ${xmlError.message}`);
             }
-        };
-
-        try {
-            const transcriptPromise = YoutubeTranscript.fetchTranscript(url);
-            const transcript = await Promise.race([
-                transcriptPromise,
-                new Promise((_, reject) => setTimeout(() => reject(new Error('Transcription timeout')), PROXY_TIMEOUT))
-            ]);
-            console.log(`[YOUTUBE] Successfully fetched transcript using proxy ${proxyUrl}`);
-            YoutubeTranscript.fetchTranscript = originalFetch;
-            return transcript;
-        } catch (error) {
-            YoutubeTranscript.fetchTranscript = originalFetch;
-            attempts++;
-            if (error.message === 'Transcription timeout' || error.message === 'Proxy timeout') {
-                console.log(`[YOUTUBE] Proxy ${proxyUrl} timed out after ${PROXY_TIMEOUT / 1000}s`);
-            }
-            if (attempts === maxAttempts) {
-                console.warn('[YOUTUBE] All proxies failed, falling back to direct connection');
-                try {
-                    const transcript = await YoutubeTranscript.fetchTranscript(url);
-                    console.log('[YOUTUBE] Successfully fetched transcript without proxy (fallback)');
-                    return transcript;
-                } catch (finalError) {
-                    throw new Error('All proxies failed and direct connection unsuccessful: ' + finalError.message);
-                }
-            }
-            console.log(`[YOUTUBE] Retrying with next proxy... (${maxAttempts - attempts} attempts remaining)`);
-            await delay(1000);
         }
+
+    }
+
+    try {
+        const {  baseUrl: fetchedBaseUrl } = await getCaptionTrackAndBaseUrl(video.captions, languageCode);
+        baseUrl = fetchedBaseUrl;
+        const transcript = await processCaptionsFromBaseUrl(baseUrl);
+        return transcript;
+    } catch (error) {
+        console.error('[YOUTUBE] Error fetching or processing captions:', error);
+        throw error; // Re-throw the error to be handled by the caller
     }
 }
 
+// Existing JSON processing function
+function processYoutubeiTranscript(data) {
+    if (!data.events) {
+        throw new Error('Invalid transcript data format');
+    }
+    return data.events
+        .filter(event => event.segs)
+        .map(event => ({
+            offset: event.tStartMs / 1000,
+            duration: (event.dDurationMs || 2000) / 1000, // Default 2s if duration missing
+            text: event.segs.map(seg => seg.utf8).join(' ')
+        }));
+}
+// Improved XML processing function
+function processXmlTranscript(xmlData) {
+    const parser = new DOMParser({
+        errorHandler: {
+            warning: (w) => { console.warn("XML Warning:", w); },  // Log warnings
+            error: (e) => { console.error("XML Error:", e); },     // Log errors
+            fatalError: (e) => { console.error("XML Fatal Error:", e); throw e; } // Throw fatal errors
+        }
+    });
+    const xmlDoc = parser.parseFromString(xmlData, 'text/xml');
+
+    // Check for parser errors *before* proceeding.  This is key!
+    if (xmlDoc.getElementsByTagName('parsererror').length > 0) {
+        const errorText = xmlDoc.getElementsByTagName('parsererror')[0].textContent;
+        console.error("XML Parsing Error:", errorText);
+        throw new Error("Failed to parse XML transcript: " + errorText);
+    }
+
+
+    const textNodes = xmlDoc.getElementsByTagName('text');
+    const transcript = [];
+
+    for (let i = 0; i < textNodes.length; i++) {
+        const node = textNodes[i];
+        const start = parseFloat(node.getAttribute('start'));
+
+        // Handle missing 'dur' attribute more robustly:
+        const durAttr = node.getAttribute('dur');
+        const dur = durAttr ? parseFloat(durAttr) : 2; // Default 2s, but *parse* if it exists
+
+        const text = node.textContent.trim();
+
+        if (text) {
+            transcript.push({
+                offset: start,
+                duration: dur,
+                text: text
+            });
+        }
+    }
+
+    return transcript;
+}
 // --- Helper Functions ---
 function secondsToSrtTimecode(seconds) {
     const h = Math.floor(seconds / 3600);
@@ -268,7 +196,7 @@ function extractVideoId(url) {
 
 // --- API Endpoints ---
 app.post('/fetch-subtitles', async (req, res) => {
-    const { url, useProxy = false, customProxies = [] } = req.body;
+     const { url, languageCode = 'en' } = req.body;
 
     if (!url) {
         return res.status(400).json({ error: 'YouTube URL is required' });
@@ -279,47 +207,45 @@ app.post('/fetch-subtitles', async (req, res) => {
         return res.status(400).json({ error: 'Invalid YouTube URL' });
     }
 
-    if (useProxy && customProxies.length > 0 && !Array.isArray(customProxies)) {
-        return res.status(400).json({ error: 'customProxies must be an array' });
-    }
-
     try {
-        console.log(`[FETCH] Starting transcript fetch for video: ${videoId}`);
-        const transcript = await fetchTranscriptWithProxy(url, useProxy, customProxies);
-        const srt = transcript.map((item, index) => 
+       console.log(`[FETCH] Starting transcript fetch for video: ${videoId} , Language: ${languageCode}`);
+        let transcript = await fetchTranscriptWithYoutubei(url, languageCode);
+        const srt = transcript.map((item, index) =>
             `${index + 1}\n${secondsToSrtTimecode(item.offset)} --> ${secondsToSrtTimecode(item.offset + item.duration)}\n${item.text.trim()}\n`
         ).join('\n');
-        
         console.log(`[FETCH] Successfully fetched ${transcript.length} subtitle entries`);
         res.json({ srt });
 
     } catch (error) {
-        console.error(`[FETCH] Error for video ${videoId}:`, error);
+        console.error(`[FETCH] Error for video ${videoId} :`, error);
 
         let errorMessage = 'Failed to fetch transcript';
         let statusCode = 500;
 
-        if (error.name === 'YoutubeTranscriptDisabledError') {
-            errorMessage = 'Subtitles are disabled for this video';
+        if (error.message.includes('No caption tracks available')) {
+            errorMessage = 'Subtitles are disabled or unavailable for this video';
             statusCode = 400;
         } else if (error.message.includes('No transcript found')) {
             errorMessage = 'No transcript found for this video';
             statusCode = 404;
-        } else if (error.message.includes('No proxies')) {
-            errorMessage = 'Unable to fetch working proxies';
-            statusCode = 503;
-        } else if (error.message.includes('All proxies failed')) {
-            errorMessage = 'All available proxies failed';
-            statusCode = 503;
         } else if (error.message.startsWith('Request failed with status code')) {
             errorMessage = `YouTube request failed: ${error.message}`;
             statusCode = parseInt(error.message.match(/\d+$/)[0], 10) || 500;
+        } else if (error.message.includes('Failed to write captions file')) {
+            errorMessage = 'Failed to save caption data.';
+            statusCode = 500;
+        }  else if (error.message.includes('No caption track found for language code')) {
+            errorMessage = error.message;
+            statusCode = 404;
+        } else if (error.message.includes('Failed to parse XML transcript')) { // XML parse error
+            errorMessage = 'Failed to parse the XML subtitle data.';
+            statusCode = 500;
         }
-
         res.status(statusCode).json({ error: errorMessage });
     }
 });
 
+// --- Process Subtitles Endpoint (Unchanged) ---
 app.get('/process-subtitles', async (req, res) => {
     const { apiKey, srt, lang, downloadOnly, linesPerRequest, model } = req.query;
 
