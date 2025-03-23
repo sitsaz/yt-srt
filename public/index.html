@@ -6,145 +6,27 @@
     <title>YouTube Subtitle Translator</title>
     <style>
         /* Reset some default styles */
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f4f4f4;
-            color: #333;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            min-height: 100vh;
-            padding: 20px;
-        }
-
-        h1, h2 {
-            color: #2c3e50;
-            margin-bottom: 30px;
-            text-align: center;
-        }
-
-        .container {
-            background-color: white;
-            border-radius: 8px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-            padding: 30px;
-            width: 100%;
-            max-width: 600px;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: bold;
-            color: #555;
-        }
-
-        input[type="url"],
-        input[type="text"],
-        input[type="number"],
-        select,
-        textarea {
-            width: 100%;
-            padding: 12px;
-            margin-bottom: 20px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 16px;
-            transition: border-color 0.3s ease;
-        }
-
-        input[type="url"]:focus,
-        input[type="text"]:focus,
-        input[type="number"]:focus,
-        select:focus,
-        textarea:focus {
-            border-color: #3498db;
-            outline: none;
-        }
-
-        input[type="checkbox"] {
-            margin-right: 8px;
-        }
-
-        button {
-            background-color: #3498db;
-            color: white;
-            padding: 12px 20px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-            transition: background-color 0.3s ease;
-            width: 100%;
-            margin-bottom: 15px;
-        }
-
-        button:hover {
-            background-color: #2980b9;
-        }
-
-        button:disabled {
-            background-color: #bdc3c7;
-            cursor: not-allowed;
-        }
-
-        #error {
-            color: #e74c3c;
-            margin-bottom: 15px;
-            display: none;
-        }
-
-        #progress {
-            margin-top: 20px;
-            text-align: center;
-        }
-
-        progress {
-            width: 100%;
-            height: 20px;
-            margin-top: 10px;
-        }
-
-        #srtPreview {
-            height: 150px;
-            resize: vertical;
-            margin-bottom: 20px;
-            font-family: 'Courier New', Courier, monospace;
-        }
-
-        #resultContainer,
-        #processContainer {
-            display: none;
-        }
-
-        #langContainer {
-            display: flex;
-            align-items: center;
-        }
-        #langCodeContainer { /* Added container for language code */
-            display: flex;
-            align-items: center;
-            margin-bottom: 10px;
-        }
-        #lang {
-            flex-grow: 1;
-            margin-right: 10px;
-        }
-         #languageCode {
-            flex-grow: 1;
-            margin-right: 10px;
-        }
-
-        #downloadOnlyLabel {
-            width: auto;
-            margin-left: 10px;
-        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f4; color: #333; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 20px; }
+        h1, h2 { color: #2c3e50; margin-bottom: 30px; text-align: center; }
+        .container { background-color: white; border-radius: 8px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); padding: 30px; width: 100%; max-width: 600px; }
+        label { display: block; margin-bottom: 8px; font-weight: bold; color: #555; }
+        input[type="url"], input[type="text"], input[type="number"], select, textarea { width: 100%; padding: 12px; margin-bottom: 20px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px; transition: border-color 0.3s ease; }
+        input[type="url"]:focus, input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:focus { border-color: #3498db; outline: none; }
+        input[type="checkbox"] { margin-right: 8px; }
+        button { background-color: #3498db; color: white; padding: 12px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; transition: background-color 0.3s ease; width: 100%; margin-bottom: 15px; }
+        button:hover { background-color: #2980b9; }
+        button:disabled { background-color: #bdc3c7; cursor: not-allowed; }
+        #error { color: #e74c3c; margin-bottom: 15px; display: none; }
+        #progress { margin-top: 20px; text-align: center; }
+        progress { width: 100%; height: 20px; margin-top: 10px; }
+        #srtPreview { height: 150px; resize: vertical; margin-bottom: 20px; font-family: 'Courier New', Courier, monospace; }
+        #resultContainer, #processContainer, #languageSelectContainer { display: none; } /* Hide initially */
+        #langContainer { display: flex; align-items: center; }
+        #langCodeContainer { display: flex; align-items: center; margin-bottom: 10px; }
+        #lang { flex-grow: 1; margin-right: 10px; }
+        #languageCode { flex-grow: 1; margin-right: 10px; }
+        #downloadOnlyLabel { width: auto; margin-left: 10px; }
     </style>
 </head>
 <body>
@@ -153,15 +35,17 @@
 
         <form id="fetchForm">
             <label for="url">YouTube URL:</label>
-            <input type="url" id="url" name="url" required placeholder="Enter YouTube video URL" aria-describedby="url-description">
-            <div id="url-description" style="display:none;">Enter the URL of the YouTube video.</div>
-              <div id="langCodeContainer">
-                <label for="languageCode">Source Language Code:</label>
-                <input type="text" id="languageCode" name="languageCode" placeholder="e.g., en, fr, es (default: en)" value="en">
+            <input type="url" id="url" name="url" required placeholder="Enter YouTube video URL">
+            <button type="button" id="getVideoDetailsBtn">Get Video Details</button> <!-- Changed to type="button" -->
+
+            <div id="languageSelectContainer">
+                <label for="languageCode">Source Language:</label>
+                <select id="languageCode" name="languageCode">
+                    <option value="" disabled selected>Select a Language</option>
+                    <!-- Options will be populated dynamically -->
+                </select>
+                <button type="submit" id="fetchBtn">Get Subtitles</button>
             </div>
-
-
-            <button type="submit" id="fetchBtn">Get Subtitles</button>
         </form>
 
         <div id="error"></div>
@@ -204,46 +88,107 @@
     </div>
 
     <script>
-       const fetchForm = document.getElementById('fetchForm');
+        const fetchForm = document.getElementById('fetchForm');
         const fetchBtn = document.getElementById('fetchBtn');
+        const getVideoDetailsBtn = document.getElementById('getVideoDetailsBtn'); // Get the new button
         const errorDiv = document.getElementById('error');
         const resultContainer = document.getElementById('resultContainer');
         const processContainer = document.getElementById('processContainer');
+        const languageSelectContainer = document.getElementById('languageSelectContainer'); // Get the container
         const srtPreview = document.getElementById('srtPreview');
         const processBtn = document.getElementById('processBtn');
         const progressDiv = document.getElementById('progress');
         const urlInput = document.getElementById('url');
         const apiKeyInput = document.getElementById('apiKey');
-        const languageCodeInput = document.getElementById('languageCode'); // Get languageCode input
+        const languageCodeSelect = document.getElementById('languageCode');
 
 
-        // Function to clear previous results and errors
         function resetUI() {
             errorDiv.style.display = 'none';
             errorDiv.textContent = '';
             resultContainer.style.display = 'none';
             processContainer.style.display = 'none';
+            languageSelectContainer.style.display = 'none'; // Hide language selection
             progressDiv.innerHTML = '';
+            languageCodeSelect.innerHTML = '<option value="" disabled selected>Select a Language</option>';
         }
 
-        // Update process button state
         function updateProcessButtonState() {
             processBtn.disabled = !srtPreview.value || !apiKeyInput.value;
         }
 
+        async function populateLanguageDropdown(url) {
+            try {
+                const response = await fetch(`/get-languages?url=${encodeURIComponent(url)}`);
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to fetch languages.');
+                }
+                const data = await response.json();
+
+                data.languages.forEach(lang => {
+                    const option = document.createElement('option');
+                    option.value = lang.code;
+                    option.textContent = `${lang.name} (${lang.code})`;
+                    languageCodeSelect.appendChild(option);
+                });
+                 languageSelectContainer.style.display = 'block'; // Show the language selection container
+
+            } catch (error) {
+                console.error('Error populating languages:', error);
+                errorDiv.textContent = error.message;
+                errorDiv.style.display = 'block';
+
+            }
+        }
+        // ADD THIS FUNCTION HERE:
+        function extractVideoId(url) {
+            const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([^"&?\/\s]{11})/);
+            return match ? match[1] : null;
+        }
+
+        getVideoDetailsBtn.addEventListener('click', async () => { // Added event listener
+            resetUI();
+            const url = urlInput.value;
+            if (url) {
+              try {
+                const videoId = extractVideoId(url); // Now it's available!
+                if (!videoId) {
+                    errorDiv.textContent = 'Invalid YouTube URL';
+                    errorDiv.style.display = 'block';
+                    return;
+                }
+                getVideoDetailsBtn.disabled = true; // Disable the button
+                getVideoDetailsBtn.textContent = 'Fetching...';
+                await populateLanguageDropdown(url); // Populate the dropdown
+
+              } catch (error){
+                console.error("input handler error", error);
+              } finally {
+                getVideoDetailsBtn.disabled = false;
+                getVideoDetailsBtn.textContent = 'Get Video Details';
+              }
+            } else {
+                 errorDiv.textContent = 'Please enter a YouTube URL.';
+                errorDiv.style.display = 'block';
+            }
+        });
 
 
-        // Initial setup
-        urlInput.addEventListener('input', resetUI);
+
         apiKeyInput.addEventListener('input', updateProcessButtonState);
 
         fetchForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const url = urlInput.value;
-            const languageCode = languageCodeInput.value; // Get language code
+            const languageCode = languageCodeSelect.value;
 
+             if (!languageCode) {
+                errorDiv.textContent = 'Please select a source language.';
+                errorDiv.style.display = 'block';
+                return;
+            }
 
-            resetUI();
             fetchBtn.disabled = true;
             fetchBtn.textContent = 'Fetching...';
 
@@ -251,7 +196,7 @@
                 const response = await fetch('/fetch-subtitles', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url, languageCode }), // Include languageCode in the request
+                    body: JSON.stringify({ url, languageCode }),
                 });
 
                 if (!response.ok) {
@@ -322,9 +267,8 @@
                 processBtn.disabled = false;
             };
         });
-
-        // Initial state
         updateProcessButtonState();
+
     </script>
 </body>
 </html>
