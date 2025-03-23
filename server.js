@@ -16,7 +16,7 @@ app.use(express.json());
 let proxies = [];
 let currentProxyIndex = 0;
 
-async function fetchProxies() {
+async function fetchProxiesFromService() {
     try {
         const response = await axios.get('https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all', { timeout: 10000 });
         const fetchedProxies = response.data.split('\r\n')
@@ -26,15 +26,21 @@ async function fetchProxies() {
         if (fetchedProxies.length > 0) {
             proxies = fetchedProxies;
             currentProxyIndex = 0;
-            console.log(`[PROXY] Successfully fetched ${proxies.length} proxies`);
+            console.log(`[PROXY] Successfully fetched ${proxies.length} proxies from service`);
             return true;
         }
-        console.warn('[PROXY] No proxies fetched from API');
+        console.warn('[PROXY] No proxies fetched from service');
         return false;
     } catch (error) {
-        console.error('[PROXY] Error fetching proxies:', error.message);
+        console.error('[PROXY] Error fetching proxies from service:', error.message);
         return false;
     }
+}
+
+function setCustomProxies(customProxies) {
+    proxies = customProxies.map(proxy => proxy.trim()).filter(proxy => proxy !== '');
+    currentProxyIndex = 0;
+    console.log(`[PROXY] Loaded ${proxies.length} custom proxies`);
 }
 
 function getNextProxy() {
@@ -54,18 +60,86 @@ const userAgents = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0',
 ];
 
-// --- Enhanced YoutubeTranscript Fetching with Retry Loop and Timeout ---
-async function fetchTranscriptWithProxy(url) {
-    // Fetch fresh proxies for each request
-    console.log('[YOUTUBE] Fetching fresh proxy list');
-    const success = await fetchProxies();
-    if (!success) {
-        throw new Error('Failed to fetch proxies');
+// --- Enhanced YoutubeTranscript Fetching ---
+async function fetchTranscriptWithProxy(url, useProxy = false, customProxies = []) {
+    const PROXY_TIMEOUT = 10000; // 10 seconds timeout per proxy attempt
+    const MAX_PROXY_RETRIES = 3;
+
+    // Function to test proxy responsiveness
+    async function testProxy(proxyUrl) {
+        try {
+            const proxyAgent = new HttpsProxyAgent(`http://${proxyUrl}`);
+            const response = await Promise.race([
+                axios.get('https://api.ipify.org?format=json', {
+                    httpsAgent: proxyAgent,
+                    timeout: 5000
+                }),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Proxy test timeout')), 5000))
+            ]);
+            console.log(`[PROXY] Proxy ${proxyUrl} is responsive - IP: ${response.data.ip}`);
+            return true;
+        } catch (error) {
+            console.log(`[PROXY] Proxy ${proxyUrl} unresponsive: ${error.message}`);
+            return false;
+        }
+    }
+
+    // Function to fetch and filter proxies
+    async function getWorkingProxies() {
+        if (customProxies.length > 0) {
+            setCustomProxies(customProxies);
+        } else {
+            for (let attempt = 1; attempt <= MAX_PROXY_RETRIES; attempt++) {
+                console.log(`[YOUTUBE] Fetching proxy list (Attempt ${attempt}/${MAX_PROXY_RETRIES})`);
+                const success = await fetchProxiesFromService();
+                if (!success) {
+                    console.log('[PROXY] Proxy fetch failed, retrying...');
+                    await delay(2000);
+                    continue;
+                }
+                break;
+            }
+            if (proxies.length === 0) return false;
+        }
+
+        const testPromises = proxies.slice(0, 10).map(proxy => testProxy(proxy));
+        const testResults = await Promise.all(testPromises);
+        const workingProxies = proxies.filter((_, index) => testResults[index]);
+        
+        if (workingProxies.length > 0) {
+            proxies = workingProxies;
+            currentProxyIndex = 0;
+            console.log(`[PROXY] Found ${workingProxies.length} working proxies`);
+            return true;
+        }
+        return false;
+    }
+
+    if (!useProxy) {
+        console.log('[YOUTUBE] Fetching transcript without proxy');
+        try {
+            const transcript = await YoutubeTranscript.fetchTranscript(url);
+            console.log('[YOUTUBE] Successfully fetched transcript without proxy');
+            return transcript;
+        } catch (error) {
+            throw new Error('Failed to fetch transcript without proxy: ' + error.message);
+        }
+    }
+
+    const hasWorkingProxies = await getWorkingProxies();
+    if (!hasWorkingProxies) {
+        console.warn('[YOUTUBE] No working proxies available, falling back to direct connection');
+        try {
+            const transcript = await YoutubeTranscript.fetchTranscript(url);
+            console.log('[YOUTUBE] Successfully fetched transcript without proxy (fallback)');
+            return transcript;
+        } catch (error) {
+            throw new Error('No proxies worked and direct connection failed: ' + error.message);
+        }
     }
 
     let attempts = 0;
     const maxAttempts = proxies.length;
-    const PROXY_TIMEOUT = 10000; // 10 seconds timeout per proxy attempt
 
     while (attempts < maxAttempts) {
         let proxyUrl = getNextProxy();
@@ -82,12 +156,9 @@ async function fetchTranscriptWithProxy(url) {
         const originalFetch = YoutubeTranscript.fetchTranscript;
         YoutubeTranscript.fetchTranscript = async function(videoUrl, options = {}) {
             try {
-                // Wrap axios request in a Promise with timeout
                 const fetchPromise = axios.get(`https://www.youtube.com/watch?v=${extractVideoId(videoUrl)}`, {
                     httpsAgent: proxyAgent,
-                    headers: {
-                        'User-Agent': randomUserAgent,
-                    },
+                    headers: { 'User-Agent': randomUserAgent },
                     timeout: PROXY_TIMEOUT
                 });
 
@@ -103,16 +174,13 @@ async function fetchTranscriptWithProxy(url) {
                     fetchOptions: {
                         ...options.fetchOptions,
                         httpsAgent: proxyAgent,
-                        headers: {
-                            'User-Agent': randomUserAgent,
-                            ...(options.fetchOptions?.headers || {})
-                        }
+                        headers: { 'User-Agent': randomUserAgent, ...(options.fetchOptions?.headers || {}) }
                     }
                 });
                 
                 return transcript;
             } catch (error) {
-                console.error(`[YOUTUBE] Proxy ${proxyUrl} failed:`, error.message);
+                console.error(`[YOUTUBE] Proxy ${proxyUrl} failed: ${error.message}`);
                 throw error;
             }
         };
@@ -124,19 +192,26 @@ async function fetchTranscriptWithProxy(url) {
                 new Promise((_, reject) => setTimeout(() => reject(new Error('Transcription timeout')), PROXY_TIMEOUT))
             ]);
             console.log(`[YOUTUBE] Successfully fetched transcript using proxy ${proxyUrl}`);
-            YoutubeTranscript.fetchTranscript = originalFetch; // Restore immediately on success
+            YoutubeTranscript.fetchTranscript = originalFetch;
             return transcript;
         } catch (error) {
-            YoutubeTranscript.fetchTranscript = originalFetch; // Restore on failure
+            YoutubeTranscript.fetchTranscript = originalFetch;
             attempts++;
             if (error.message === 'Transcription timeout' || error.message === 'Proxy timeout') {
                 console.log(`[YOUTUBE] Proxy ${proxyUrl} timed out after ${PROXY_TIMEOUT / 1000}s`);
             }
             if (attempts === maxAttempts) {
-                throw new Error('All proxies failed or timed out');
+                console.warn('[YOUTUBE] All proxies failed, falling back to direct connection');
+                try {
+                    const transcript = await YoutubeTranscript.fetchTranscript(url);
+                    console.log('[YOUTUBE] Successfully fetched transcript without proxy (fallback)');
+                    return transcript;
+                } catch (finalError) {
+                    throw new Error('All proxies failed and direct connection unsuccessful: ' + finalError.message);
+                }
             }
             console.log(`[YOUTUBE] Retrying with next proxy... (${maxAttempts - attempts} attempts remaining)`);
-            await delay(1000); // Small delay between retries
+            await delay(1000);
         }
     }
 }
@@ -193,7 +268,7 @@ function extractVideoId(url) {
 
 // --- API Endpoints ---
 app.post('/fetch-subtitles', async (req, res) => {
-    const { url } = req.body;
+    const { url, useProxy = false, customProxies = [] } = req.body;
 
     if (!url) {
         return res.status(400).json({ error: 'YouTube URL is required' });
@@ -204,9 +279,13 @@ app.post('/fetch-subtitles', async (req, res) => {
         return res.status(400).json({ error: 'Invalid YouTube URL' });
     }
 
+    if (useProxy && customProxies.length > 0 && !Array.isArray(customProxies)) {
+        return res.status(400).json({ error: 'customProxies must be an array' });
+    }
+
     try {
         console.log(`[FETCH] Starting transcript fetch for video: ${videoId}`);
-        const transcript = await fetchTranscriptWithProxy(url);
+        const transcript = await fetchTranscriptWithProxy(url, useProxy, customProxies);
         const srt = transcript.map((item, index) => 
             `${index + 1}\n${secondsToSrtTimecode(item.offset)} --> ${secondsToSrtTimecode(item.offset + item.duration)}\n${item.text.trim()}\n`
         ).join('\n');
@@ -226,11 +305,11 @@ app.post('/fetch-subtitles', async (req, res) => {
         } else if (error.message.includes('No transcript found')) {
             errorMessage = 'No transcript found for this video';
             statusCode = 404;
-        } else if (error.message === 'Failed to fetch proxies' || error.message === 'No proxies available') {
+        } else if (error.message.includes('No proxies')) {
             errorMessage = 'Unable to fetch working proxies';
             statusCode = 503;
-        } else if (error.message === 'All proxies failed or timed out') {
-            errorMessage = 'All available proxies failed or timed out';
+        } else if (error.message.includes('All proxies failed')) {
+            errorMessage = 'All available proxies failed';
             statusCode = 503;
         } else if (error.message.startsWith('Request failed with status code')) {
             errorMessage = `YouTube request failed: ${error.message}`;
@@ -375,7 +454,7 @@ app.get('/process-subtitles', async (req, res) => {
 // --- Initialization ---
 (async () => {
     try {
-        console.log('[INIT] Starting server without initial proxy fetch');
+        console.log('[INIT] Starting server');
         app.listen(port, () => {
             console.log(`[INIT] Server running at http://localhost:${port}`);
         });

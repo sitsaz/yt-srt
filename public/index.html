@@ -13,23 +13,18 @@
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; /* Modern, readable font */
-            background-color: #f4f4f4; /* Light gray background */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f4f4;
             color: #333;
             display: flex;
             flex-direction: column;
-            align-items: center; /* Center content horizontally */
-            min-height: 100vh; /* Full viewport height */
+            align-items: center;
+            min-height: 100vh;
             padding: 20px;
         }
 
-        h1 {
-            color: #2c3e50; /* Darker heading color */
-            margin-bottom: 30px;
-            text-align: center;
-        }
-        h2{
-             color: #2c3e50; /* Darker heading color */
+        h1, h2 {
+            color: #2c3e50;
             margin-bottom: 30px;
             text-align: center;
         }
@@ -37,10 +32,10 @@
         .container {
             background-color: white;
             border-radius: 8px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Subtle shadow */
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
             padding: 30px;
             width: 100%;
-            max-width: 600px; /* Limit width for better readability */
+            max-width: 600px;
         }
 
         label {
@@ -61,7 +56,7 @@
             border: 1px solid #ddd;
             border-radius: 4px;
             font-size: 16px;
-            transition: border-color 0.3s ease; /* Smooth transition on focus */
+            transition: border-color 0.3s ease;
         }
 
         input[type="url"]:focus,
@@ -69,7 +64,7 @@
         input[type="number"]:focus,
         select:focus,
         textarea:focus {
-            border-color: #3498db; /* Highlight on focus */
+            border-color: #3498db;
             outline: none;
         }
 
@@ -78,7 +73,7 @@
         }
 
         button {
-            background-color: #3498db; /* Blue button color */
+            background-color: #3498db;
             color: white;
             padding: 12px 20px;
             border: none;
@@ -86,12 +81,12 @@
             cursor: pointer;
             font-size: 16px;
             transition: background-color 0.3s ease;
-            width: 100%; /* Full-width button */
+            width: 100%;
             margin-bottom: 15px;
         }
 
         button:hover {
-            background-color: #2980b9; /* Darker blue on hover */
+            background-color: #2980b9;
         }
 
         button:disabled {
@@ -100,9 +95,9 @@
         }
 
         #error {
-            color: #e74c3c; /* Red error text */
+            color: #e74c3c;
             margin-bottom: 15px;
-            display: none; /* Hidden by default */
+            display: none;
         }
 
         #progress {
@@ -117,31 +112,52 @@
         }
 
         #srtPreview {
-            height: 150px; /* Reduced height */
-            resize: vertical; /* Allow vertical resizing */
+            height: 150px;
+            resize: vertical;
             margin-bottom: 20px;
-             font-family: 'Courier New', Courier, monospace;
+            font-family: 'Courier New', Courier, monospace;
         }
 
-        /* Initially hide processing-related elements */
         #resultContainer,
         #processContainer {
             display: none;
         }
 
-         #langContainer {
-           display: flex;
-           align-items: center;
-         }
-         #lang {
-           flex-grow: 1;
-           margin-right: 10px;
-         }
+        #langContainer {
+            display: flex;
+            align-items: center;
+        }
 
-         #downloadOnlyLabel{
-             width: auto;
+        #lang {
+            flex-grow: 1;
+            margin-right: 10px;
+        }
+
+        #downloadOnlyLabel {
+            width: auto;
             margin-left: 10px;
-         }
+        }
+
+        /* Proxy Options Styles */
+        #proxyOptions {
+            margin-bottom: 20px;
+        }
+
+        .proxy-radio {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .proxy-radio input[type="radio"] {
+            margin-right: 8px;
+        }
+
+        #customProxyList {
+            display: none;
+            height: 100px;
+            resize: vertical;
+        }
     </style>
 </head>
 <body>
@@ -152,6 +168,23 @@
             <label for="url">YouTube URL:</label>
             <input type="url" id="url" name="url" required placeholder="Enter YouTube video URL" aria-describedby="url-description">
             <div id="url-description" style="display:none;">Enter the URL of the YouTube video.</div>
+
+            <div id="proxyOptions">
+                <label>Proxy Options:</label>
+                <div class="proxy-radio">
+                    <input type="radio" id="noProxy" name="proxyType" value="noProxy" checked>
+                    <label for="noProxy">No Proxy</label>
+                </div>
+                <div class="proxy-radio">
+                    <input type="radio" id="autoProxy" name="proxyType" value="autoProxy">
+                    <label for="autoProxy">Automatic Proxy List</label>
+                </div>
+                <div class="proxy-radio">
+                    <input type="radio" id="customProxy" name="proxyType" value="customProxy">
+                    <label for="customProxy">Custom Proxy List</label>
+                </div>
+                <textarea id="customProxyList" name="customProxyList" placeholder="Enter proxies (one per line, e.g., 192.168.1.1:8080)"></textarea>
+            </div>
 
             <button type="submit" id="fetchBtn">Get Subtitles</button>
         </form>
@@ -196,8 +229,8 @@
     </div>
 
     <script>
-       const fetchForm = document.getElementById('fetchForm');
-        const fetchBtn = document.getElementById('fetchBtn'); // Get the fetch button
+        const fetchForm = document.getElementById('fetchForm');
+        const fetchBtn = document.getElementById('fetchBtn');
         const errorDiv = document.getElementById('error');
         const resultContainer = document.getElementById('resultContainer');
         const processContainer = document.getElementById('processContainer');
@@ -206,6 +239,10 @@
         const progressDiv = document.getElementById('progress');
         const urlInput = document.getElementById('url');
         const apiKeyInput = document.getElementById('apiKey');
+        const noProxyRadio = document.getElementById('noProxy');
+        const autoProxyRadio = document.getElementById('autoProxy');
+        const customProxyRadio = document.getElementById('customProxy');
+        const customProxyList = document.getElementById('customProxyList');
 
         // Function to clear previous results and errors
         function resetUI() {
@@ -216,28 +253,61 @@
             progressDiv.innerHTML = '';
         }
 
-        // Disable the "Process" button until subtitles are fetched.
+        // Update process button state
         function updateProcessButtonState() {
-            processBtn.disabled = !srtPreview.value;
+            processBtn.disabled = !srtPreview.value || !apiKeyInput.value;
         }
 
-        // Add event listener for input changes on the URL field
+        // Toggle custom proxy list visibility
+        function toggleCustomProxyList() {
+            customProxyList.style.display = customProxyRadio.checked ? 'block' : 'none';
+        }
+
+        // Event listeners for proxy options
+        noProxyRadio.addEventListener('change', toggleCustomProxyList);
+        autoProxyRadio.addEventListener('change', toggleCustomProxyList);
+        customProxyRadio.addEventListener('change', toggleCustomProxyList);
+
+        // Initial setup
+        toggleCustomProxyList();
         urlInput.addEventListener('input', resetUI);
+        apiKeyInput.addEventListener('input', updateProcessButtonState);
 
         fetchForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const url = urlInput.value;
+            const proxyType = document.querySelector('input[name="proxyType"]:checked').value;
+            let useProxy = false;
+            let customProxies = [];
 
-            resetUI(); // Clear previous results
-             fetchBtn.disabled = true; // Disable fetch button during request
-            fetchBtn.textContent = 'Fetching...'; // Change button text
+            if (proxyType === 'autoProxy') {
+                useProxy = true;
+            } else if (proxyType === 'customProxy') {
+                useProxy = true;
+                const proxyInput = customProxyList.value.trim();
+                if (proxyInput) {
+                    customProxies = proxyInput.split('\n').map(line => line.trim()).filter(line => line);
+                    if (customProxies.length === 0) {
+                        errorDiv.textContent = 'Please provide at least one valid proxy in the custom list';
+                        errorDiv.style.display = 'block';
+                        return;
+                    }
+                } else {
+                    errorDiv.textContent = 'Custom proxy list cannot be empty when selected';
+                    errorDiv.style.display = 'block';
+                    return;
+                }
+            }
 
+            resetUI();
+            fetchBtn.disabled = true;
+            fetchBtn.textContent = 'Fetching...';
 
             try {
                 const response = await fetch('/fetch-subtitles', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url }),
+                    body: JSON.stringify({ url, useProxy, customProxies }),
                 });
 
                 if (!response.ok) {
@@ -249,19 +319,16 @@
                 srtPreview.value = data.srt;
                 resultContainer.style.display = 'block';
                 processContainer.style.display = 'block';
-                updateProcessButtonState(); // Enable "Process" button
+                updateProcessButtonState();
             } catch (error) {
                 errorDiv.textContent = error.message;
                 errorDiv.style.display = 'block';
             } finally {
-                 fetchBtn.disabled = false; // Re-enable fetch button
-                 fetchBtn.textContent = 'Get Subtitles'; // Change text back
+                fetchBtn.disabled = false;
+                fetchBtn.textContent = 'Get Subtitles';
             }
         });
-        // Event listener for input in API Key Field
-        apiKeyInput.addEventListener('input', () => {
-            processBtn.disabled = !(srtPreview.value && apiKeyInput.value);
-        });
+
         processBtn.addEventListener('click', () => {
             const apiKey = apiKeyInput.value;
             const srt = encodeURIComponent(srtPreview.value);
@@ -273,7 +340,7 @@
             errorDiv.style.display = 'none';
             errorDiv.textContent = '';
             progressDiv.innerHTML = 'Starting...';
-            processBtn.disabled = true; //Disable button while processing
+            processBtn.disabled = true;
 
             const eventSource = new EventSource(
                 `/process-subtitles?apiKey=${encodeURIComponent(apiKey)}&srt=${srt}&lang=${encodeURIComponent(lang)}&downloadOnly=${downloadOnly}&linesPerRequest=${linesPerRequest}&model=${encodeURIComponent(model)}`
@@ -287,7 +354,7 @@
                     errorDiv.textContent = data.error;
                     errorDiv.style.display = 'block';
                     eventSource.close();
-                     processBtn.disabled = false; // Re-enable the button on error
+                    processBtn.disabled = false;
                 } else if (data.type === 'complete') {
                     const blob = new Blob([data.srt], { type: 'text/srt' });
                     const downloadUrl = window.URL.createObjectURL(blob);
@@ -300,7 +367,7 @@
                     window.URL.revokeObjectURL(downloadUrl);
                     progressDiv.innerHTML = 'Processing complete!';
                     eventSource.close();
-                    processBtn.disabled = false; // Re-enable button
+                    processBtn.disabled = false;
                 }
             };
 
@@ -308,11 +375,11 @@
                 errorDiv.textContent = 'Connection lost. Please try again.';
                 errorDiv.style.display = 'block';
                 eventSource.close();
-                processBtn.disabled = false; // Re-enable button
-
+                processBtn.disabled = false;
             };
         });
-          // Initially disable the process button
+
+        // Initial state
         updateProcessButtonState();
     </script>
 </body>
