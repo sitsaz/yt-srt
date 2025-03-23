@@ -1,5 +1,5 @@
 {
-  "name": "youtube-subtitle-app",
+  "name": "CaptionAI",
   "version": "1.0.0",
   "main": "server.js",
   "engines": {
@@ -9,13 +9,12 @@
     "start": "node server.js"
   },
   "keywords": [],
-  "author": "",
+  "author": "YeBeKhe",
   "license": "MIT",
-  "description": "Fetches, translates, and downloads YouTube subtitles.",
+  "description": "Fetch, translates, and downloads YouTube subtitles.",
   "dependencies": {
-    "@google/generative-ai": "lateset",
+    "@google/generative-ai": "^0.24.0",
     "express": "^4.21.2",
-    "node-fetch": "^3.3.2",
     "uuid": "^11.1.0",
     "youtube-caption-extractor": "^1.4.3"
   }
