@@ -16,6 +16,6 @@
     "axios": "^1.8.4",
     "cheerio": "^1.0.0",
     "express": "^4.21.2",
-    "youtubei.js": "github:LuanRT/YouTube.js"
+    "youtubei.js": "latest"
   }
 }
