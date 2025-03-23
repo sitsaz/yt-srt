@@ -27,11 +27,6 @@ jobs:
       - name: Install @angablue/exe
         run: npm install --save-dev @angablue/exe
 
-      - name: Create exe.json Configuration
-        run: |
-          powershell -Command "Set-Content -Path exe.json -Value '{\"entry\": \"server.js\", \"out\": \"build/yt-srt.exe\", \"version\": \"${{ github.event.inputs.version }}\", \"icon\": \"public/favicon.ico\", \"executionLevel\": \"asInvoker\", \"properties\": {\"FileDescription\": \"yt-srt Executable\", \"ProductName\": \"yt-srt\", \"CompanyName\": \"yebekhe\", \"LegalCopyright\": \"© 2025 yebekhe\"}}'"
-        shell: cmd
-
       - name: Build Executable
         run: npx exe exe.json
 
