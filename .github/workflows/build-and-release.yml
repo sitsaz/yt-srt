@@ -22,24 +22,17 @@ jobs:
           node-version: '20'
 
       - name: Install Dependencies
-        run: npm install
-
-      - name: Install @angablue/exe (Force Clean)
         run: |
-          npm cache clean --force
-          npm uninstall @angablue/exe
-          cd %GITHUB_WORKSPACE%
-          npm i -D @angablue/exe
+          npm install
+          echo "GITHUB_EVENT_INPUTS_VERSION=${{ github.event.inputs.version }}" >> $Env:GITHUB_ENV
         shell: cmd
 
-      - name: Build Executable (Debug Current Directory)
-        run: |
-          echo Running exe.js directly
-          cd %GITHUB_WORKSPACE%
-          echo Current Directory:
-          cd
-          dir exe.json
-          npx exe exe.json
+
+      - name: Install @angablue/exe
+        run: npm install --save-dev @angablue/exe
+
+      - name: Build Executable
+        run: node build.js  # Execute the build script
         shell: cmd
 
       - name: Prepare Release Assets
