@@ -28,16 +28,13 @@ jobs:
         run: npm install --save-dev @angablue/exe
 
       - name: Verify exe.json Exists
-        run: |
-          dir exe.json || echo "exe.json not found in current directory"
-          cd
+        run: dir %GITHUB_WORKSPACE%\exe.json
         shell: cmd
 
       - name: Build Executable
         run: |
-          echo Running npx exe with explicit path
-          dir exe.json
-          npx exe .\exe.json
+          echo Running exe.js directly
+          node node_modules\@angablue\exe\bin\exe.js %GITHUB_WORKSPACE%\exe.json
         shell: cmd
 
       - name: Prepare Release Assets
