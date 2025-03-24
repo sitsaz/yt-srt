@@ -23,6 +23,7 @@ jobs:
       run: npm install
     - name: Build EXE with Config Creation
       run: |
+        # Create exe.json
         $json = @{
           "entry" = "server.js"
           "out" = "dist/CaptionAI.exe"
@@ -37,8 +38,17 @@ jobs:
             "OriginalFilename" = "CaptionAI.exe"
           }
         } | ConvertTo-Json -Depth 10
-        Set-Content -Path exe.json -Value $json
-        npx exe exe.json
+        Set-Content -Path .\exe.json -Value $json -Force
+        # Debug: Verify file exists and show content
+        if (Test-Path .\exe.json) {
+          Write-Output "exe.json created successfully:"
+          Get-Content .\exe.json
+        } else {
+          Write-Error "Failed to create exe.json"
+          exit 1
+        }
+        # Build the EXE
+        npx exe .\exe.json
       shell: pwsh  # Use PowerShell for Windows runner
     - name: Compress EXE and public folder
       run: npm run compress
