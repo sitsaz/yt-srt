@@ -7,9 +7,8 @@ on:
         description: 'Release version'
         required: true
 
-# Add permissions to allow creating releases
 permissions:
-  contents: write  # Grants read/write access to repository contents, including releases
+  contents: write  # Required for creating releases
 
 jobs:
   build:
@@ -19,11 +18,13 @@ jobs:
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '20'  # Using 20 as per the latest suggestion
+        node-version: '20'  # Required for @angablue/exe
     - name: Install dependencies
       run: npm install
     - name: Build EXE
       run: npm run build
+    - name: Compress EXE and public folder
+      run: npm run compress
     - name: Create Release
       id: create_release
       uses: actions/create-release@v1
@@ -40,6 +41,6 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./dist/CaptionAI.exe
-        asset_name: CaptionAI.exe
-        asset_content_type: application/octet-stream
+        asset_path: ./dist/CaptionAI-release.zip
+        asset_name: CaptionAI-release.zip
+        asset_content_type: application/zip
