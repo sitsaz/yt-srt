@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "main": "server.js",
   "engines": {
-    "node": "20.x"
+    "node": ">=14.0.0"
   },
   "scripts": {
     "start": "node server.js",
-    "build": "npx exe exe.json",
+    "build": "nexe server.js -t windows-x64-14.15.1 -o dist/CaptionAI.exe",
     "compress": "powershell -Command \"Compress-Archive -Path dist/CaptionAI.exe, public -DestinationPath dist/CaptionAI-release.zip\""
   },
   "keywords": [],
@@ -21,6 +21,6 @@
     "youtube-caption-extractor": "^1.4.3"
   },
   "devDependencies": {
-    "@angablue/exe": "^3.2.4"
+    "nexe": "^4.0.0-beta.19"
   }
 }
