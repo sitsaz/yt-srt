@@ -1,0 +1,14 @@
+{
+  "entry": "server.js",
+  "out": "dist/CaptionAI.exe",
+  "skipBundle": false,
+  "version": "1.0.0",
+  "icon": "public/favicon.ico",
+  "executionLevel": "asInvoker",
+  "properties": {
+    "FileDescription": "Fetch, translates, and downloads YouTube subtitles.",
+    "ProductName": "CaptionAI",
+    "LegalCopyright": "YeBeKhe",
+    "OriginalFilename": "CaptionAI.exe"
+  }
+}
