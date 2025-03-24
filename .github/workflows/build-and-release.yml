@@ -34,7 +34,8 @@ jobs:
       - name: Build Executable
         run: |
           echo Running exe.js directly
-          npx exe %GITHUB_WORKSPACE%\exe.json
+          cd %GITHUB_WORKSPACE%
+          npx exe exe.json
         shell: cmd
 
       - name: Prepare Release Assets
