@@ -21,50 +21,10 @@ jobs:
         node-version: '20'
     - name: Install dependencies
       run: npm install
-    - name: Build EXE with Config Creation
-      run: |
-        # Get the current working directory as an absolute path
-        $workDir = Get-Location
-        $exeJsonPath = Join-Path $workDir "exe.json"
-        
-        # Create exe.json
-        $json = @{
-          "entry" = "server.js"
-          "out" = "dist/CaptionAI.exe"
-          "skipBundle" = $false
-          "version" = "${{ inputs.version }}"
-          "icon" = "public/favicon.ico"
-          "executionLevel" = "asInvoker"
-          "properties" = @{
-            "FileDescription" = "Fetch, translates, and downloads YouTube subtitles."
-            "ProductName" = "CaptionAI"
-            "LegalCopyright" = "YeBeKhe"
-            "OriginalFilename" = "CaptionAI.exe"
-          }
-        } | ConvertTo-Json -Depth 10
-        Set-Content -Path $exeJsonPath -Value $json -Force
-        
-        # Debug: Verify file exists and show content
-        if (Test-Path $exeJsonPath) {
-          Write-Output "exe.json created successfully at: $exeJsonPath"
-          Get-Content $exeJsonPath
-        } else {
-          Write-Error "Failed to create exe.json"
-          exit 1
-        }
-        
-        # Brief delay to ensure file is written
-        Start-Sleep -Milliseconds 500
-        
-        # Double-check file existence before running npx
-        if (Test-Path $exeJsonPath) {
-          Write-Output "File still exists before npx exe"
-          npx exe $exeJsonPath
-        } else {
-          Write-Error "exe.json disappeared before npx exe could run"
-          exit 1
-        }
-      shell: pwsh  # Use PowerShell for Windows runner
+    - name: Build EXE
+      run: node build-exe.js
+      env:
+        VERSION: ${{ inputs.version }}
     - name: Compress EXE and public folder
       run: npm run compress
     - name: Create Release
