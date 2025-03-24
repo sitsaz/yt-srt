@@ -18,11 +18,28 @@ jobs:
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '20'  # Required for @angablue/exe
+        node-version: '20'
     - name: Install dependencies
       run: npm install
-    - name: Build EXE
-      run: npm run build
+    - name: Build EXE with Config Creation
+      run: |
+        $json = @{
+          "entry" = "server.js"
+          "out" = "dist/CaptionAI.exe"
+          "skipBundle" = $false
+          "version" = "${{ inputs.version }}"
+          "icon" = "public/favicon.ico"
+          "executionLevel" = "asInvoker"
+          "properties" = @{
+            "FileDescription" = "Fetch, translates, and downloads YouTube subtitles."
+            "ProductName" = "CaptionAI"
+            "LegalCopyright" = "YeBeKhe"
+            "OriginalFilename" = "CaptionAI.exe"
+          }
+        } | ConvertTo-Json -Depth 10
+        Set-Content -Path exe.json -Value $json
+        npx exe exe.json
+      shell: pwsh  # Use PowerShell for Windows runner
     - name: Compress EXE and public folder
       run: npm run compress
     - name: Create Release
