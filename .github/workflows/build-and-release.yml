@@ -34,7 +34,7 @@ jobs:
       - name: Build Executable
         run: |
           echo Running exe.js directly
-          node node_modules\@angablue\exe\bin\exe.js %GITHUB_WORKSPACE%\exe.json
+          npx exe %GITHUB_WORKSPACE%\exe.json
         shell: cmd
 
       - name: Prepare Release Assets
