@@ -7,7 +7,7 @@
   },
   "scripts": {
     "start": "node server.js",
-    "build": "pkg . --targets node18-win-x64 --output dist/CaptionAI.exe --options icon=public/favicon.ico"
+    "build": "pkg server.js --targets node18-win-x64 --output dist/CaptionAI.exe --options icon=public/favicon.ico"
   },
   "keywords": [],
   "author": "YeBeKhe",
