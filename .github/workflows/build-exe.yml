@@ -15,32 +15,27 @@ jobs:
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v4
+    
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '14'
+        node-version: '18'
+        
     - name: Install dependencies
       run: npm install
+      
     - name: Build EXE
       run: npm run build
+      
     - name: Compress EXE and public folder
       run: npm run compress
+      
     - name: Create Release
       id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: softprops/action-gh-release@v1
       with:
         tag_name: v${{ inputs.version }}
-        release_name: Release v${{ inputs.version }}
+        name: Release v${{ inputs.version }}
         draft: false
         prerelease: false
-    - name: Upload Release Asset
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./dist/CaptionAI-release.zip
-        asset_name: CaptionAI-release.zip
-        asset_content_type: application/zip
+        files: ./dist/CaptionAI-release.zip
