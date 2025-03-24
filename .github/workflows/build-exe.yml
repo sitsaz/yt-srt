@@ -18,13 +18,11 @@ jobs:
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: '14'
     - name: Install dependencies
       run: npm install
     - name: Build EXE
-      run: node build-exe.js
-      env:
-        VERSION: ${{ inputs.version }}
+      run: npm run build
     - name: Compress EXE and public folder
       run: npm run compress
     - name: Create Release
