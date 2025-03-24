@@ -6,7 +6,8 @@
     "node": "22.14.0"
   },
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "build": "pkg . --targets node18-win-x64 --output dist/CaptionAI.exe --options icon=public/favicon.ico"
   },
   "keywords": [],
   "author": "YeBeKhe",
@@ -17,5 +18,11 @@
     "express": "^4.21.2",
     "uuid": "^11.1.0",
     "youtube-caption-extractor": "^1.4.3"
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1"
+  },
+  "pkg": {
+    "assets": ["public/**/*"]
   }
 }
